@@ -1,0 +1,14 @@
+{
+  "name": "@reality-check/core",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./dist/src/index.js" },
+  "scripts": { "build": "tsc -b" },
+  "dependencies": {
+    "@reality-check/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0"
+  }
+}
