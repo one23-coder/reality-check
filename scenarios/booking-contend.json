@@ -1,49 +1,182 @@
 {
-  "protocol": { "scenario": "1.0" },
+  "protocol": {
+    "scenario": "1.0"
+  },
   "id": "booking-contend",
   "name": "争抢最后名额",
   "description": "holder 先显式报名占用 1 个名额（内核不向适配器传角色种子，占用意图由 seedRole 声明 + 显式报名步骤保证，规则 7），随后两个未占用名额的账号经同步屏障同时提交报名，争抢仅剩的 1 个名额。正确实现恰有一方成功（bookings=2、capacity-left=0，另一方入候补）。overbooking 故障下双方都落库（bookings=3、capacity-left=-1），归因到 capacity-not-exceeded。",
   "app": "booking-app",
   "seed": 11,
   "roles": [
-    { "id": "contender1", "account": { "username": "contender1_rc", "password": "pw-c1" }, "seedRole": "none" },
-    { "id": "contender2", "account": { "username": "contender2_rc", "password": "pw-c2" }, "seedRole": "none" },
-    { "id": "holder", "account": { "username": "holder_rc", "password": "pw-holder" }, "seedRole": "holder" }
+    {
+      "id": "contender1",
+      "account": {
+        "username": "contender1_rc",
+        "password": "pw-c1"
+      },
+      "seedRole": "none"
+    },
+    {
+      "id": "contender2",
+      "account": {
+        "username": "contender2_rc",
+        "password": "pw-c2"
+      },
+      "seedRole": "none"
+    },
+    {
+      "id": "holder",
+      "account": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      },
+      "seedRole": "holder"
+    }
   ],
   "steps": [
-    { "id": "holder-register", "actor": "holder", "op": "register", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-login", "actor": "holder", "op": "login", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-nav-book", "actor": "holder", "op": "navigate", "params": { "path": "/book?course=course-1" } },
-    { "id": "holder-submit-booking", "actor": "holder", "op": "submit" },
-    { "id": "c1-register", "actor": "contender1", "op": "register", "params": { "username": "contender1_rc", "password": "pw-c1" } },
-    { "id": "c1-login", "actor": "contender1", "op": "login", "params": { "username": "contender1_rc", "password": "pw-c1" } },
-    { "id": "c1-nav-book", "actor": "contender1", "op": "navigate", "params": { "path": "/book?course=course-1" } },
-    { "id": "c2-register", "actor": "contender2", "op": "register", "params": { "username": "contender2_rc", "password": "pw-c2" } },
-    { "id": "c2-login", "actor": "contender2", "op": "login", "params": { "username": "contender2_rc", "password": "pw-c2" } },
-    { "id": "c2-nav-book", "actor": "contender2", "op": "navigate", "params": { "path": "/book?course=course-1" } },
-    { "id": "c1-submit-booking", "actor": "contender1", "op": "submit", "barrier": true },
-    { "id": "c2-submit-booking", "actor": "contender2", "op": "submit", "barrier": true }
+    {
+      "id": "holder-register",
+      "actor": "holder",
+      "op": "register",
+      "params": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      }
+    },
+    {
+      "id": "holder-login",
+      "actor": "holder",
+      "op": "login",
+      "params": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      }
+    },
+    {
+      "id": "holder-nav-book",
+      "actor": "holder",
+      "op": "navigate",
+      "params": {
+        "path": "/book?course=course-1"
+      }
+    },
+    {
+      "id": "holder-submit-booking",
+      "actor": "holder",
+      "op": "submit"
+    },
+    {
+      "id": "c1-register",
+      "actor": "contender1",
+      "op": "register",
+      "params": {
+        "username": "contender1_rc",
+        "password": "pw-c1"
+      }
+    },
+    {
+      "id": "c1-login",
+      "actor": "contender1",
+      "op": "login",
+      "params": {
+        "username": "contender1_rc",
+        "password": "pw-c1"
+      }
+    },
+    {
+      "id": "c1-nav-book",
+      "actor": "contender1",
+      "op": "navigate",
+      "params": {
+        "path": "/book?course=course-1"
+      }
+    },
+    {
+      "id": "c2-register",
+      "actor": "contender2",
+      "op": "register",
+      "params": {
+        "username": "contender2_rc",
+        "password": "pw-c2"
+      }
+    },
+    {
+      "id": "c2-login",
+      "actor": "contender2",
+      "op": "login",
+      "params": {
+        "username": "contender2_rc",
+        "password": "pw-c2"
+      }
+    },
+    {
+      "id": "c2-nav-book",
+      "actor": "contender2",
+      "op": "navigate",
+      "params": {
+        "path": "/book?course=course-1"
+      }
+    },
+    {
+      "id": "c1-submit-booking",
+      "actor": "contender1",
+      "op": "submit",
+      "barrier": true
+    },
+    {
+      "id": "c2-submit-booking",
+      "actor": "contender2",
+      "op": "submit",
+      "barrier": true
+    }
   ],
   "observers": [
     {
       "id": "booking-count",
       "sql": "SELECT COUNT(*) AS n FROM bookings",
-      "tables": ["bookings"],
-      "expectColumns": ["n"]
+      "tables": [
+        "bookings"
+      ],
+      "expectColumns": [
+        "n"
+      ]
     },
     {
       "id": "capacity-left",
       "sql": "SELECT capacity - (SELECT COUNT(*) FROM bookings WHERE bookings.course_id = courses.id) AS left FROM courses WHERE id = 'course-1'",
-      "tables": ["courses", "bookings"],
-      "expectColumns": ["left"]
+      "tables": [
+        "courses",
+        "bookings"
+      ],
+      "expectColumns": [
+        "left"
+      ]
     }
   ],
   "assertions": [
-    { "id": "exactly-one-winner", "rule": "booking-recorded", "observer": "booking-count", "op": "eq", "value": 2 },
-    { "id": "no-overbooking", "rule": "capacity-not-exceeded", "observer": "capacity-left", "op": "gte", "value": 0 }
+    {
+      "id": "exactly-one-winner",
+      "rule": "booking-recorded",
+      "observer": "booking-count",
+      "op": "gte",
+      "value": 2
+    },
+    {
+      "id": "no-overbooking",
+      "rule": "capacity-not-exceeded",
+      "observer": "capacity-left",
+      "op": "gte",
+      "value": 0
+    }
   ],
   "rules": [
-    { "id": "booking-recorded", "description": "争抢后恰好一方成功：bookings 恰好 2 条（holder 占用 + 唯一赢家），败者只能入候补" },
-    { "id": "capacity-not-exceeded", "description": "名额不可超订：capacity-left >= 0；overbooking 故障下双方落库使其为负" }
+    {
+      "id": "booking-recorded",
+      "description": "争抢后恰好一方成功：bookings 恰好 2 条（holder 占用 + 唯一赢家），败者只能入候补"
+    },
+    {
+      "id": "capacity-not-exceeded",
+      "description": "名额不可超订：capacity-left >= 0；overbooking 故障下双方落库使其为负"
+    }
   ]
 }

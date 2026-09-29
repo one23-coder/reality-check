@@ -60,7 +60,16 @@ export interface Observer {
   expectColumns: string[];
 }
 
-export type AssertOp = "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "countEq";
+export type AssertOp =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "countEq"
+  /** String equality on the observer's first column (账号名等), compared to `expected`. */
+  | "eqStr";
 
 export interface Assertion {
   id: string;
@@ -68,8 +77,10 @@ export interface Assertion {
   rule: string;
   observer: string;
   op: AssertOp;
-  /** For countEq: expected row count. Others: compare first row's first column. */
-  value: number;
+  /** Required for numeric ops (forbidden for eqStr): the comparison value. */
+  value?: number;
+  /** Required for op "eqStr" (forbidden otherwise): the expected string. */
+  expected?: string;
 }
 
 export interface Rule {
@@ -129,8 +140,13 @@ const assertionV = vObject<Assertion>({
     id: idField,
     rule: vString,
     observer: vString,
-    op: vEnum<AssertOp>(["eq", "ne", "gt", "gte", "lt", "lte", "countEq"]),
+    op: vEnum<AssertOp>(["eq", "ne", "gt", "gte", "lt", "lte", "countEq", "eqStr"]),
+  },
+  optional: {
+    /** Required for numeric ops (forbidden for eqStr): the comparison value. */
     value: vInt({ min: 0 }),
+    /** Required for op "eqStr" (forbidden otherwise): the expected string. */
+    expected: vString,
   },
 });
 
@@ -167,6 +183,17 @@ export const scenarioV: V<Scenario> = (value, path) => {
     if (!observerIds.has(a.observer))
       throw new Error(`assertions[${a.id}].observer: unknown observer "${a.observer}"`);
     if (!ruleIds.has(a.rule)) throw new Error(`assertions[${a.id}].rule: unknown rule "${a.rule}"`);
+    if (a.op === "eqStr") {
+      if (a.expected === undefined)
+        throw new Error(`assertions[${a.id}]: op "eqStr" requires "expected"`);
+      if (a.value !== undefined)
+        throw new Error(`assertions[${a.id}]: "value" is not valid for op "eqStr"`);
+    } else {
+      if (a.value === undefined)
+        throw new Error(`assertions[${a.id}]: numeric op "${a.op}" requires "value"`);
+      if (a.expected !== undefined)
+        throw new Error(`assertions[${a.id}]: "expected" is only valid for op "eqStr"`);
+    }
   }
   // Barriers: a barrier step must be followed by >=1 more barrier step in the
   // same group; a lone barrier step is a config error (同步屏障无意义).

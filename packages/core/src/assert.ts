@@ -20,11 +20,11 @@ import type { ObserverReading } from "./adapter.js";
 // The protocol types missingEvidenceTypes as EvidenceKind[] (file kinds), but
 // the schema validator accepts any string: observation gaps ("rows",
 // "columns", "numeric-cell") are evidence-type gaps of the reading itself.
-export type MissingEvidence = EvidenceKind | "rows" | "columns" | "numeric-cell";
+export type MissingEvidence = EvidenceKind | "rows" | "columns" | "numeric-cell" | "cell";
 
 type Cmp = (observed: number, expected: number) => boolean;
 
-const CMP: Record<Assertion["op"], Cmp> = {
+const CMP: Record<Exclude<Assertion["op"], "eqStr">, Cmp> = {
   eq: (a, b) => a === b,
   ne: (a, b) => a !== b,
   gt: (a, b) => a > b,
@@ -50,11 +50,31 @@ export function evaluateAssertion(
   if (first === undefined)
     return inconclusive(assertion, reading.evidence, ["rows"]);
   const cell = first[column];
+  if (assertion.op === "eqStr") {
+    // String equality (账号名等): the cell must equal `expected`. An absent
+    // cell is an evidence gap, not a violation (方案 §10).
+    if (assertion.expected === undefined)
+      throw internalError(`eqStr assertion "${assertion.id}" missing "expected"`);
+    if (cell === undefined || cell === null)
+      return inconclusive(assertion, reading.evidence, ["cell"]);
+    const observedStr = String(cell);
+    const heldStr = observedStr === assertion.expected;
+    return {
+      ruleId: assertion.rule,
+      assertionId: assertion.id,
+      verdict: heldStr ? "held" : "violated",
+      observed: observedStr,
+      expected: `eqStr ${assertion.expected}`,
+      evidenceRefs: reading.evidence,
+    };
+  }
   if (typeof cell !== "number")
     return inconclusive(assertion, reading.evidence, ["numeric-cell"]);
   const observed = assertion.op === "countEq" ? reading.rows.length : cell;
   const cmp = CMP[assertion.op];
   if (cmp === undefined) throw internalError(`unknown assertion op "${assertion.op}"`);
+  if (assertion.value === undefined)
+    throw internalError(`numeric assertion "${assertion.id}" missing "value"`);
   const held = cmp(observed, assertion.value);
   return {
     ruleId: assertion.rule,

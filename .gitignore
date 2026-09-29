@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
-runs/
+runs*/
+.wsl-*.log
 *.log
 .DS_Store

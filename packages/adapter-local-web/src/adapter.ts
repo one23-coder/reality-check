@@ -91,6 +91,18 @@ const OBSERVERS: Record<string, { sql: string; tables: string[]; columns: string
     tables: ["exams", "reservations"],
     columns: ["left"],
   },
+  // String-valued observers for op "eqStr": who holds the promoted booking /
+  // reservation (waitlist-order-wrong detection — 方案 §3.1 matrix).
+  "booking-holder": {
+    sql: "SELECT account FROM bookings WHERE course_id = 'course-1' AND account NOT IN ('holder_rc','holder2_rc') ORDER BY id ASC LIMIT 1",
+    tables: ["bookings"],
+    columns: ["account"],
+  },
+  "reservation-holder": {
+    sql: "SELECT account FROM reservations WHERE exam_id = 'exam-1' AND account <> 'holder_rc' ORDER BY id ASC LIMIT 1",
+    tables: ["reservations"],
+    columns: ["account"],
+  },
 };
 
 const SUPPORTED_OPS = [
@@ -104,7 +116,7 @@ const SUPPORTED_OPS = [
   "barrier",
 ] as const;
 
-const SUPPORTED_ASSERTIONS = ["eq", "ne", "gt", "gte", "lt", "lte", "countEq"] as const;
+const SUPPORTED_ASSERTIONS = ["eq", "ne", "gt", "gte", "lt", "lte", "countEq", "eqStr"] as const;
 
 const OBSERVED_TABLES = [
   "courses",
