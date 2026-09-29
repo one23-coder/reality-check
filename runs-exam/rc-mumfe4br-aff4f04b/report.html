@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Reality Check 执行报告 rc-mumfe4br-aff4f04b</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:24px;color:#111;max-width:1100px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:17px;margin:28px 0 8px;border-bottom:1px solid #e4e4e7;padding-bottom:4px}
+.meta{color:#555;font-size:13px;margin-bottom:16px}
+.badge{display:inline-block;color:#fff;padding:3px 12px;border-radius:999px;font-weight:600;font-size:14px;vertical-align:middle}
+.badge-passed{background:#15803d}
+.badge-failed{background:#b91c1c}
+.badge-inconclusive{background:#b45309}
+.badge-blocked{background:#4b5563}
+table{border-collapse:collapse;width:100%;margin:8px 0 12px;font-size:13px}
+th,td{border:1px solid #d4d4d4;padding:6px 10px;text-align:left;vertical-align:top}
+th{background:#f4f4f5}
+code,pre{background:#f4f4f5;border-radius:4px;font-size:12.5px}
+code{padding:1px 4px}
+pre{padding:10px;overflow-x:auto}
+</style>
+</head>
+<body>
+<h1>Reality Check 执行报告</h1>
+<p class="meta">
+运行 <strong>rc-mumfe4br-aff4f04b</strong> · 场景 <strong>exam-contend</strong> ·
+种子 19 ·
+<span class="badge badge-passed">passed (exit 0) · 通过</span>
+</p>
+
+<h2>业务规则</h2>
+<table>
+<tr><th>规则</th><th>判定</th><th>断言</th><th>观测值</th><th>期望</th><th>证据文件</th></tr>
+<tr><td>reservation-recorded</td><td>held</td><td>exactly-one-winner</td><td><code>2</code></td><td>eq 2</td><td>evidence/obs-seat-count-1.json</td></tr>
+<tr><td>capacity-not-exceeded</td><td>held</td><td>no-overbooking</td><td><code>0</code></td><td>gte 0</td><td>evidence/obs-seats-left-2.json</td></tr>
+</table>
+
+<h2>实验条件</h2>
+<table>
+<tr><th>项目</th><th>值</th></tr>
+<tr><td>应用版本</td><td>0.1.0</td></tr>
+<tr><td>适配器版本</td><td>0.1.0</td></tr>
+<tr><td>Base URL</td><td><code>http://127.0.0.1:55791</code></td></tr>
+<tr><td>数据库</td><td><code>D:\aimanage\Reality Check\runs-exam\rc-mumfe4br-aff4f04b\data\app.db</code></td></tr>
+<tr><td>种子 (seed)</td><td>19</td></tr>
+<tr><td>平台</td><td>win32</td></tr>
+<tr><td>协议版本</td><td>场景 1.0 / 结果 1.0 / 工具 0.1.0</td></tr>
+</table>
+
+<h2>操作与请求时间线</h2>
+<p class="meta">因果边以 &#8592; seq N 标注。</p>
+<table>
+<tr><th>步骤</th><th>角色</th><th>操作</th><th>结果</th><th>HTTP</th><th>明细</th></tr>
+<tr><td>holder-register</td><td>holder</td><td>register</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/register&quot;,&quot;banner&quot;:&quot;注册成功（holder_rc）&quot;}</code></td></tr>
+<tr><td>holder-login</td><td>holder</td><td>login</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/login&quot;,&quot;banner&quot;:&quot;登录成功（holder_rc）&quot;}</code></td></tr>
+<tr><td>holder-nav-reserve</td><td>holder</td><td>navigate</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve?exam=exam-1&quot;}</code></td></tr>
+<tr><td>holder-submit-reserve</td><td>holder</td><td>submit</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve&quot;,&quot;banner&quot;:&quot;预约成功，座位号 1&quot;}</code></td></tr>
+<tr><td>c1-register</td><td>contender1</td><td>register</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/register&quot;,&quot;banner&quot;:&quot;注册成功（contender1_rc）&quot;}</code></td></tr>
+<tr><td>c1-login</td><td>contender1</td><td>login</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/login&quot;,&quot;banner&quot;:&quot;登录成功（contender1_rc）&quot;}</code></td></tr>
+<tr><td>c1-nav-reserve</td><td>contender1</td><td>navigate</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve?exam=exam-1&quot;}</code></td></tr>
+<tr><td>c2-register</td><td>contender2</td><td>register</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/register&quot;,&quot;banner&quot;:&quot;注册成功（contender2_rc）&quot;}</code></td></tr>
+<tr><td>c2-login</td><td>contender2</td><td>login</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/login&quot;,&quot;banner&quot;:&quot;登录成功（contender2_rc）&quot;}</code></td></tr>
+<tr><td>c2-nav-reserve</td><td>contender2</td><td>navigate</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve?exam=exam-1&quot;}</code></td></tr>
+<tr><td>c1-submit-reserve</td><td>contender1</td><td>submit</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve&quot;,&quot;banner&quot;:&quot;预约成功，座位号 2&quot;}</code></td></tr>
+<tr><td>c2-submit-reserve</td><td>contender2</td><td>submit</td><td>completed</td><td>—</td><td><code>{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve&quot;,&quot;banner&quot;:&quot;座位已被占先，您已加入候补队列，位置 1&quot;}</code></td></tr>
+</table>
+<table>
+<tr><th>seq</th><th>时间</th><th>类型</th><th>角色</th><th>明细 / 因果</th></tr>
+<tr><td>0</td><td><code>2026-09-29T08:39:49.098Z</code></td><td>run-started</td><td>—</td><td><code>{&quot;scenarioId&quot;:&quot;exam-contend&quot;,&quot;seed&quot;:19,&quot;scenarioSha256&quot;:&quot;1338983adab3a637d0cf73550781085fad398dcc364f21cac41a965b2a9488d2&quot;}</code></td></tr>
+<tr><td>1</td><td><code>2026-09-29T08:39:49.828Z</code></td><td>env-ready</td><td>—</td><td><code>{&quot;appVersion&quot;:&quot;0.1.0&quot;,&quot;adapterVersion&quot;:&quot;0.1.0&quot;,&quot;baseUrl&quot;:&quot;http://127.0.0.1:55791&quot;,&quot;seed&quot;:19,&quot;platform&quot;:&quot;win32&quot;,&quot;dbPath&quot;:&quot;D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfe4br-aff4f04b\\data\\app.db&quot;}</code></td></tr>
+<tr><td>2</td><td><code>2026-09-29T08:39:49.839Z</code></td><td>accounts-registered</td><td>—</td><td><code>{&quot;count&quot;:3}</code></td></tr>
+<tr><td>3</td><td><code>2026-09-29T08:39:51.236Z</code></td><td>step</td><td>holder</td><td><code>{&quot;stepId&quot;:&quot;holder-register&quot;,&quot;op&quot;:&quot;register&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/register&quot;,&quot;banner&quot;:&quot;注册成功（holder_rc）&quot;}}</code></td></tr>
+<tr><td>4</td><td><code>2026-09-29T08:39:52.367Z</code></td><td>step</td><td>holder</td><td><code>{&quot;stepId&quot;:&quot;holder-login&quot;,&quot;op&quot;:&quot;login&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/login&quot;,&quot;banner&quot;:&quot;登录成功（holder_rc）&quot;}}</code></td></tr>
+<tr><td>5</td><td><code>2026-09-29T08:39:52.933Z</code></td><td>step</td><td>holder</td><td><code>{&quot;stepId&quot;:&quot;holder-nav-reserve&quot;,&quot;op&quot;:&quot;navigate&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve?exam=exam-1&quot;}}</code></td></tr>
+<tr><td>6</td><td><code>2026-09-29T08:39:53.531Z</code></td><td>step</td><td>holder</td><td><code>{&quot;stepId&quot;:&quot;holder-submit-reserve&quot;,&quot;op&quot;:&quot;submit&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve&quot;,&quot;banner&quot;:&quot;预约成功，座位号 1&quot;}}</code></td></tr>
+<tr><td>7</td><td><code>2026-09-29T08:39:54.758Z</code></td><td>step</td><td>contender1</td><td><code>{&quot;stepId&quot;:&quot;c1-register&quot;,&quot;op&quot;:&quot;register&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/register&quot;,&quot;banner&quot;:&quot;注册成功（contender1_rc）&quot;}}</code></td></tr>
+<tr><td>8</td><td><code>2026-09-29T08:39:55.883Z</code></td><td>step</td><td>contender1</td><td><code>{&quot;stepId&quot;:&quot;c1-login&quot;,&quot;op&quot;:&quot;login&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/login&quot;,&quot;banner&quot;:&quot;登录成功（contender1_rc）&quot;}}</code></td></tr>
+<tr><td>9</td><td><code>2026-09-29T08:39:56.459Z</code></td><td>step</td><td>contender1</td><td><code>{&quot;stepId&quot;:&quot;c1-nav-reserve&quot;,&quot;op&quot;:&quot;navigate&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve?exam=exam-1&quot;}}</code></td></tr>
+<tr><td>10</td><td><code>2026-09-29T08:39:57.668Z</code></td><td>step</td><td>contender2</td><td><code>{&quot;stepId&quot;:&quot;c2-register&quot;,&quot;op&quot;:&quot;register&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/register&quot;,&quot;banner&quot;:&quot;注册成功（contender2_rc）&quot;}}</code></td></tr>
+<tr><td>11</td><td><code>2026-09-29T08:39:58.802Z</code></td><td>step</td><td>contender2</td><td><code>{&quot;stepId&quot;:&quot;c2-login&quot;,&quot;op&quot;:&quot;login&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/login&quot;,&quot;banner&quot;:&quot;登录成功（contender2_rc）&quot;}}</code></td></tr>
+<tr><td>12</td><td><code>2026-09-29T08:39:59.363Z</code></td><td>step</td><td>contender2</td><td><code>{&quot;stepId&quot;:&quot;c2-nav-reserve&quot;,&quot;op&quot;:&quot;navigate&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve?exam=exam-1&quot;}}</code></td></tr>
+<tr><td>13</td><td><code>2026-09-29T08:39:59.992Z</code></td><td>step</td><td>contender1</td><td><code>{&quot;stepId&quot;:&quot;c1-submit-reserve&quot;,&quot;op&quot;:&quot;submit&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve&quot;,&quot;banner&quot;:&quot;预约成功，座位号 2&quot;}}</code></td></tr>
+<tr><td>14</td><td><code>2026-09-29T08:39:59.992Z</code></td><td>step</td><td>contender2</td><td><code>{&quot;stepId&quot;:&quot;c2-submit-reserve&quot;,&quot;op&quot;:&quot;submit&quot;,&quot;outcome&quot;:&quot;completed&quot;,&quot;detail&quot;:{&quot;url&quot;:&quot;http://127.0.0.1:55791/reserve&quot;,&quot;banner&quot;:&quot;座位已被占先，您已加入候补队列，位置 1&quot;}}</code></td></tr>
+<tr><td>15</td><td><code>2026-09-29T08:40:00.005Z</code></td><td>observe</td><td>—</td><td><code>{&quot;observerId&quot;:&quot;seat-count&quot;,&quot;rows&quot;:1,&quot;columns&quot;:[&quot;n&quot;],&quot;evidence&quot;:1}</code></td></tr>
+<tr><td>16</td><td><code>2026-09-29T08:40:00.009Z</code></td><td>observe</td><td>—</td><td><code>{&quot;observerId&quot;:&quot;seats-left&quot;,&quot;rows&quot;:1,&quot;columns&quot;:[&quot;left&quot;],&quot;evidence&quot;:1}</code></td></tr>
+<tr><td>17</td><td><code>2026-09-29T08:40:00.009Z</code></td><td>assert</td><td>—</td><td><code>{&quot;assertionId&quot;:&quot;exactly-one-winner&quot;,&quot;ruleId&quot;:&quot;reservation-recorded&quot;,&quot;verdict&quot;:&quot;held&quot;,&quot;observed&quot;:2,&quot;expected&quot;:&quot;eq 2&quot;}</code> &#8592; seq 15</td></tr>
+<tr><td>18</td><td><code>2026-09-29T08:40:00.010Z</code></td><td>assert</td><td>—</td><td><code>{&quot;assertionId&quot;:&quot;no-overbooking&quot;,&quot;ruleId&quot;:&quot;capacity-not-exceeded&quot;,&quot;verdict&quot;:&quot;held&quot;,&quot;observed&quot;:0,&quot;expected&quot;:&quot;gte 0&quot;}</code> &#8592; seq 16</td></tr>
+<tr><td>19</td><td><code>2026-09-29T08:40:00.010Z</code></td><td>verdict</td><td>—</td><td><code>{&quot;verdict&quot;:&quot;passed&quot;}</code></td></tr>
+<tr><td>20</td><td><code>2026-09-29T08:40:00.380Z</code></td><td>torn-down</td><td>—</td><td><code>{&quot;paths&quot;:[&quot;D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfe4br-aff4f04b\\data\\app.db&quot;,&quot;D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfe4br-aff4f04b\\data&quot;]}</code></td></tr>
+</table>
+
+<h2>证据</h2>
+<table>
+<tr><th>类型</th><th>文件</th><th>seq</th><th>角色</th><th>SHA-256</th></tr>
+<tr><td>sql-dump</td><td><code>evidence/obs-seat-count-1.json</code></td><td>1</td><td>—</td><td><code>ffbcb64f7fa2096b8753b878885ab8dcd22f64ad70bcc55fba0d4fda0b65e7cd</code></td></tr>
+<tr><td>sql-dump</td><td><code>evidence/obs-seats-left-2.json</code></td><td>2</td><td>—</td><td><code>3d3ca9107ae34964264255a3e83bfc82ba18f31062e220d4b7d0aa356daa6fbe</code></td></tr>
+</table>
+
+<h2>复跑入口</h2>
+<pre><code>npx reality-check rerun --run-id rc-mumfe4br-aff4f04b</code></pre>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "sql": "SELECT capacity - (SELECT COUNT(*) FROM reservations WHERE reservations.exam_id = exams.id) AS left FROM exams WHERE id = 'exam-1'",
+  "rows": [
+    {
+      "left": 0
+    }
+  ]
+}

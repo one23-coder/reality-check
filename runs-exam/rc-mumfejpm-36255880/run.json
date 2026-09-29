@@ -1,0 +1,18 @@
+{
+  "protocol": {
+    "artifacts": "1.0"
+  },
+  "runId": "rc-mumfejpm-36255880",
+  "scenarioId": "exam-cancel-waitlist",
+  "scenarioSha256": "e1009c336df7cdc7b09929c9ae1152a8e46b1e1527cf41f05f686379637b307f",
+  "seed": 23,
+  "startedAt": "2026-09-29T08:40:09.035Z",
+  "versions": {
+    "scenario": "1.0",
+    "result": "1.0",
+    "artifacts": "1.0",
+    "manifest": "1.0",
+    "adapter": "0.1.0"
+  },
+  "platform": "win32 x64 node v22.18.0"
+}

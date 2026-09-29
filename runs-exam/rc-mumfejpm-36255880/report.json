@@ -1,0 +1,824 @@
+{
+  "protocol": {
+    "result": "1.0"
+  },
+  "runId": "rc-mumfejpm-36255880",
+  "scenarioId": "exam-cancel-waitlist",
+  "scenarioSha256": "e1009c336df7cdc7b09929c9ae1152a8e46b1e1527cf41f05f686379637b307f",
+  "seed": 23,
+  "startedAt": "2026-09-29T08:40:09.035Z",
+  "finishedAt": "2026-09-29T08:40:21.720Z",
+  "verdict": "passed",
+  "ruleEvaluations": [
+    {
+      "ruleId": "cancel-releases-seat",
+      "assertionId": "seat-refilled-by-promotion",
+      "verdict": "held",
+      "observed": 2,
+      "expected": "eq 2",
+      "evidenceRefs": [
+        {
+          "kind": "sql-dump",
+          "file": "evidence/obs-seat-count-1.json",
+          "seq": 1,
+          "sha256": "ffbcb64f7fa2096b8753b878885ab8dcd22f64ad70bcc55fba0d4fda0b65e7cd"
+        }
+      ]
+    },
+    {
+      "ruleId": "waitlist-declared-order",
+      "assertionId": "seats-back-to-full",
+      "verdict": "held",
+      "observed": 0,
+      "expected": "lte 0",
+      "evidenceRefs": [
+        {
+          "kind": "sql-dump",
+          "file": "evidence/obs-seats-left-2.json",
+          "seq": 2,
+          "sha256": "3d3ca9107ae34964264255a3e83bfc82ba18f31062e220d4b7d0aa356daa6fbe"
+        }
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "seq": 0,
+      "t": "2026-09-29T08:40:09.038Z",
+      "kind": "run-started",
+      "detail": {
+        "scenarioId": "exam-cancel-waitlist",
+        "seed": 23,
+        "scenarioSha256": "e1009c336df7cdc7b09929c9ae1152a8e46b1e1527cf41f05f686379637b307f"
+      }
+    },
+    {
+      "seq": 1,
+      "t": "2026-09-29T08:40:09.702Z",
+      "kind": "env-ready",
+      "detail": {
+        "appVersion": "0.1.0",
+        "adapterVersion": "0.1.0",
+        "baseUrl": "http://127.0.0.1:65230",
+        "seed": 23,
+        "platform": "win32",
+        "dbPath": "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfejpm-36255880\\data\\app.db"
+      }
+    },
+    {
+      "seq": 2,
+      "t": "2026-09-29T08:40:09.714Z",
+      "kind": "accounts-registered",
+      "detail": {
+        "count": 3
+      }
+    },
+    {
+      "seq": 3,
+      "t": "2026-09-29T08:40:11.073Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/register",
+          "banner": "注册成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 4,
+      "t": "2026-09-29T08:40:12.191Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/login",
+          "banner": "登录成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 5,
+      "t": "2026-09-29T08:40:12.740Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 6,
+      "t": "2026-09-29T08:40:13.310Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve",
+          "banner": "预约成功，座位号 1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 7,
+      "t": "2026-09-29T08:40:14.515Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/register",
+          "banner": "注册成功（holder2_rc）"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 8,
+      "t": "2026-09-29T08:40:15.646Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/login",
+          "banner": "登录成功（holder2_rc）"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 9,
+      "t": "2026-09-29T08:40:16.194Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 10,
+      "t": "2026-09-29T08:40:16.763Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve",
+          "banner": "预约成功，座位号 2"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 11,
+      "t": "2026-09-29T08:40:17.968Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/register",
+          "banner": "注册成功（bob_rc）"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 12,
+      "t": "2026-09-29T08:40:19.080Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/login",
+          "banner": "登录成功（bob_rc）"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 13,
+      "t": "2026-09-29T08:40:19.664Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 14,
+      "t": "2026-09-29T08:40:20.257Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve",
+          "banner": "座位已被占先，您已加入候补队列，位置 1"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 15,
+      "t": "2026-09-29T08:40:20.808Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-nav-cancel",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/cancel?exam=exam-1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 16,
+      "t": "2026-09-29T08:40:21.384Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-submit-cancel",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/cancel",
+          "banner": "已取消预约；候补 bob_rc 已递补成功，座位号 3"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 17,
+      "t": "2026-09-29T08:40:21.398Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seat-count",
+        "rows": 1,
+        "columns": [
+          "n"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 18,
+      "t": "2026-09-29T08:40:21.400Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seats-left",
+        "rows": 1,
+        "columns": [
+          "left"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 19,
+      "t": "2026-09-29T08:40:21.401Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "seat-refilled-by-promotion",
+        "ruleId": "cancel-releases-seat",
+        "verdict": "held",
+        "observed": 2,
+        "expected": "eq 2"
+      },
+      "causation": 17
+    },
+    {
+      "seq": 20,
+      "t": "2026-09-29T08:40:21.401Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "seats-back-to-full",
+        "ruleId": "waitlist-declared-order",
+        "verdict": "held",
+        "observed": 0,
+        "expected": "lte 0"
+      },
+      "causation": 18
+    },
+    {
+      "seq": 21,
+      "t": "2026-09-29T08:40:21.401Z",
+      "kind": "verdict",
+      "detail": {
+        "verdict": "passed"
+      }
+    },
+    {
+      "seq": 22,
+      "t": "2026-09-29T08:40:21.720Z",
+      "kind": "torn-down",
+      "detail": {
+        "paths": [
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfejpm-36255880\\data\\app.db",
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfejpm-36255880\\data"
+        ]
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "stepId": "holder-register",
+      "actor": "holder",
+      "op": "register",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/register",
+        "banner": "注册成功（holder_rc）"
+      }
+    },
+    {
+      "stepId": "holder-login",
+      "actor": "holder",
+      "op": "login",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/login",
+        "banner": "登录成功（holder_rc）"
+      }
+    },
+    {
+      "stepId": "holder-nav-reserve",
+      "actor": "holder",
+      "op": "navigate",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+      }
+    },
+    {
+      "stepId": "holder-submit-reserve",
+      "actor": "holder",
+      "op": "submit",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/reserve",
+        "banner": "预约成功，座位号 1"
+      }
+    },
+    {
+      "stepId": "holder2-register",
+      "actor": "holder2",
+      "op": "register",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/register",
+        "banner": "注册成功（holder2_rc）"
+      }
+    },
+    {
+      "stepId": "holder2-login",
+      "actor": "holder2",
+      "op": "login",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/login",
+        "banner": "登录成功（holder2_rc）"
+      }
+    },
+    {
+      "stepId": "holder2-nav-reserve",
+      "actor": "holder2",
+      "op": "navigate",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+      }
+    },
+    {
+      "stepId": "holder2-submit-reserve",
+      "actor": "holder2",
+      "op": "submit",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/reserve",
+        "banner": "预约成功，座位号 2"
+      }
+    },
+    {
+      "stepId": "bob-register",
+      "actor": "bob",
+      "op": "register",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/register",
+        "banner": "注册成功（bob_rc）"
+      }
+    },
+    {
+      "stepId": "bob-login",
+      "actor": "bob",
+      "op": "login",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/login",
+        "banner": "登录成功（bob_rc）"
+      }
+    },
+    {
+      "stepId": "bob-nav-reserve",
+      "actor": "bob",
+      "op": "navigate",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+      }
+    },
+    {
+      "stepId": "bob-submit-reserve",
+      "actor": "bob",
+      "op": "submit",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/reserve",
+        "banner": "座位已被占先，您已加入候补队列，位置 1"
+      }
+    },
+    {
+      "stepId": "holder-nav-cancel",
+      "actor": "holder",
+      "op": "navigate",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/cancel?exam=exam-1"
+      }
+    },
+    {
+      "stepId": "holder-submit-cancel",
+      "actor": "holder",
+      "op": "submit",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:65230/cancel",
+        "banner": "已取消预约；候补 bob_rc 已递补成功，座位号 3"
+      }
+    }
+  ],
+  "env": {
+    "appVersion": "0.1.0",
+    "adapterVersion": "0.1.0",
+    "baseUrl": "http://127.0.0.1:65230",
+    "seed": 23,
+    "platform": "win32",
+    "dbPath": "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfejpm-36255880\\data\\app.db"
+  },
+  "evidence": [
+    {
+      "kind": "sql-dump",
+      "file": "evidence/obs-seat-count-1.json",
+      "seq": 1,
+      "sha256": "ffbcb64f7fa2096b8753b878885ab8dcd22f64ad70bcc55fba0d4fda0b65e7cd"
+    },
+    {
+      "kind": "sql-dump",
+      "file": "evidence/obs-seats-left-2.json",
+      "seq": 2,
+      "sha256": "3d3ca9107ae34964264255a3e83bfc82ba18f31062e220d4b7d0aa356daa6fbe"
+    }
+  ],
+  "events": [
+    {
+      "seq": 0,
+      "t": "2026-09-29T08:40:09.038Z",
+      "kind": "run-started",
+      "detail": {
+        "scenarioId": "exam-cancel-waitlist",
+        "seed": 23,
+        "scenarioSha256": "e1009c336df7cdc7b09929c9ae1152a8e46b1e1527cf41f05f686379637b307f"
+      }
+    },
+    {
+      "seq": 1,
+      "t": "2026-09-29T08:40:09.702Z",
+      "kind": "env-ready",
+      "detail": {
+        "appVersion": "0.1.0",
+        "adapterVersion": "0.1.0",
+        "baseUrl": "http://127.0.0.1:65230",
+        "seed": 23,
+        "platform": "win32",
+        "dbPath": "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfejpm-36255880\\data\\app.db"
+      }
+    },
+    {
+      "seq": 2,
+      "t": "2026-09-29T08:40:09.714Z",
+      "kind": "accounts-registered",
+      "detail": {
+        "count": 3
+      }
+    },
+    {
+      "seq": 3,
+      "t": "2026-09-29T08:40:11.073Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/register",
+          "banner": "注册成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 4,
+      "t": "2026-09-29T08:40:12.191Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/login",
+          "banner": "登录成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 5,
+      "t": "2026-09-29T08:40:12.740Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 6,
+      "t": "2026-09-29T08:40:13.310Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve",
+          "banner": "预约成功，座位号 1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 7,
+      "t": "2026-09-29T08:40:14.515Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/register",
+          "banner": "注册成功（holder2_rc）"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 8,
+      "t": "2026-09-29T08:40:15.646Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/login",
+          "banner": "登录成功（holder2_rc）"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 9,
+      "t": "2026-09-29T08:40:16.194Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 10,
+      "t": "2026-09-29T08:40:16.763Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder2-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve",
+          "banner": "预约成功，座位号 2"
+        }
+      },
+      "actor": "holder2"
+    },
+    {
+      "seq": 11,
+      "t": "2026-09-29T08:40:17.968Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/register",
+          "banner": "注册成功（bob_rc）"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 12,
+      "t": "2026-09-29T08:40:19.080Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/login",
+          "banner": "登录成功（bob_rc）"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 13,
+      "t": "2026-09-29T08:40:19.664Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve?exam=exam-1"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 14,
+      "t": "2026-09-29T08:40:20.257Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "bob-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/reserve",
+          "banner": "座位已被占先，您已加入候补队列，位置 1"
+        }
+      },
+      "actor": "bob"
+    },
+    {
+      "seq": 15,
+      "t": "2026-09-29T08:40:20.808Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-nav-cancel",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/cancel?exam=exam-1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 16,
+      "t": "2026-09-29T08:40:21.384Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-submit-cancel",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:65230/cancel",
+          "banner": "已取消预约；候补 bob_rc 已递补成功，座位号 3"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 17,
+      "t": "2026-09-29T08:40:21.398Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seat-count",
+        "rows": 1,
+        "columns": [
+          "n"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 18,
+      "t": "2026-09-29T08:40:21.400Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seats-left",
+        "rows": 1,
+        "columns": [
+          "left"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 19,
+      "t": "2026-09-29T08:40:21.401Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "seat-refilled-by-promotion",
+        "ruleId": "cancel-releases-seat",
+        "verdict": "held",
+        "observed": 2,
+        "expected": "eq 2"
+      },
+      "causation": 17
+    },
+    {
+      "seq": 20,
+      "t": "2026-09-29T08:40:21.401Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "seats-back-to-full",
+        "ruleId": "waitlist-declared-order",
+        "verdict": "held",
+        "observed": 0,
+        "expected": "lte 0"
+      },
+      "causation": 18
+    },
+    {
+      "seq": 21,
+      "t": "2026-09-29T08:40:21.401Z",
+      "kind": "verdict",
+      "detail": {
+        "verdict": "passed"
+      }
+    },
+    {
+      "seq": 22,
+      "t": "2026-09-29T08:40:21.720Z",
+      "kind": "torn-down",
+      "detail": {
+        "paths": [
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfejpm-36255880\\data\\app.db",
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfejpm-36255880\\data"
+        ]
+      }
+    }
+  ]
+}

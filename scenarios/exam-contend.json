@@ -1,0 +1,49 @@
+{
+  "protocol": { "scenario": "1.0" },
+  "id": "exam-contend",
+  "name": "争抢最后座位",
+  "description": "holder 先显式预约占用 1 个座位（内核不向适配器传角色种子，占用意图由 seedRole 声明 + 显式预约步骤保证，规则 7），随后两个未占用座位的账号经同步屏障同时提交预约，争抢仅剩的 1 个座位。正确实现恰有一方成功（reservations=2、seats-left=0，另一方入候补）。overbooking 故障下双方都落库（reservations=3、seats-left=-1），归因到 capacity-not-exceeded。",
+  "app": "exam-seat-app",
+  "seed": 19,
+  "roles": [
+    { "id": "contender1", "account": { "username": "contender1_rc", "password": "pw-c1" }, "seedRole": "none" },
+    { "id": "contender2", "account": { "username": "contender2_rc", "password": "pw-c2" }, "seedRole": "none" },
+    { "id": "holder", "account": { "username": "holder_rc", "password": "pw-holder" }, "seedRole": "holder" }
+  ],
+  "steps": [
+    { "id": "holder-register", "actor": "holder", "op": "register", "params": { "username": "holder_rc", "password": "pw-holder" } },
+    { "id": "holder-login", "actor": "holder", "op": "login", "params": { "username": "holder_rc", "password": "pw-holder" } },
+    { "id": "holder-nav-reserve", "actor": "holder", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },
+    { "id": "holder-submit-reserve", "actor": "holder", "op": "submit" },
+    { "id": "c1-register", "actor": "contender1", "op": "register", "params": { "username": "contender1_rc", "password": "pw-c1" } },
+    { "id": "c1-login", "actor": "contender1", "op": "login", "params": { "username": "contender1_rc", "password": "pw-c1" } },
+    { "id": "c1-nav-reserve", "actor": "contender1", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },
+    { "id": "c2-register", "actor": "contender2", "op": "register", "params": { "username": "contender2_rc", "password": "pw-c2" } },
+    { "id": "c2-login", "actor": "contender2", "op": "login", "params": { "username": "contender2_rc", "password": "pw-c2" } },
+    { "id": "c2-nav-reserve", "actor": "contender2", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },
+    { "id": "c1-submit-reserve", "actor": "contender1", "op": "submit", "barrier": true },
+    { "id": "c2-submit-reserve", "actor": "contender2", "op": "submit", "barrier": true }
+  ],
+  "observers": [
+    {
+      "id": "seat-count",
+      "sql": "SELECT COUNT(*) AS n FROM reservations",
+      "tables": ["reservations"],
+      "expectColumns": ["n"]
+    },
+    {
+      "id": "seats-left",
+      "sql": "SELECT capacity - (SELECT COUNT(*) FROM reservations WHERE reservations.exam_id = exams.id) AS left FROM exams WHERE id = 'exam-1'",
+      "tables": ["exams", "reservations"],
+      "expectColumns": ["left"]
+    }
+  ],
+  "assertions": [
+    { "id": "exactly-one-winner", "rule": "reservation-recorded", "observer": "seat-count", "op": "eq", "value": 2 },
+    { "id": "no-overbooking", "rule": "capacity-not-exceeded", "observer": "seats-left", "op": "gte", "value": 0 }
+  ],
+  "rules": [
+    { "id": "reservation-recorded", "description": "争抢后恰好一方成功：reservations 恰好 2 条（holder 占用 + 唯一赢家），败者只能入候补" },
+    { "id": "capacity-not-exceeded", "description": "座位不可超订：seats-left >= 0；overbooking 故障下双方落库使其为负" }
+  ]
+}

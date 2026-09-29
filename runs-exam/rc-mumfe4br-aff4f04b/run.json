@@ -1,0 +1,18 @@
+{
+  "protocol": {
+    "artifacts": "1.0"
+  },
+  "runId": "rc-mumfe4br-aff4f04b",
+  "scenarioId": "exam-contend",
+  "scenarioSha256": "1338983adab3a637d0cf73550781085fad398dcc364f21cac41a965b2a9488d2",
+  "seed": 19,
+  "startedAt": "2026-09-29T08:39:49.095Z",
+  "versions": {
+    "scenario": "1.0",
+    "result": "1.0",
+    "artifacts": "1.0",
+    "manifest": "1.0",
+    "adapter": "0.1.0"
+  },
+  "platform": "win32 x64 node v22.18.0"
+}

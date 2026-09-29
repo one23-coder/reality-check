@@ -1,0 +1,21 @@
+{"seq":0,"t":"2026-09-29T08:39:49.098Z","kind":"run-started","detail":{"scenarioId":"exam-contend","seed":19,"scenarioSha256":"1338983adab3a637d0cf73550781085fad398dcc364f21cac41a965b2a9488d2"}}
+{"seq":1,"t":"2026-09-29T08:39:49.828Z","kind":"env-ready","detail":{"appVersion":"0.1.0","adapterVersion":"0.1.0","baseUrl":"http://127.0.0.1:55791","seed":19,"platform":"win32","dbPath":"D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfe4br-aff4f04b\\data\\app.db"}}
+{"seq":2,"t":"2026-09-29T08:39:49.839Z","kind":"accounts-registered","detail":{"count":3}}
+{"seq":3,"t":"2026-09-29T08:39:51.236Z","kind":"step","detail":{"stepId":"holder-register","op":"register","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/register","banner":"注册成功（holder_rc）"}},"actor":"holder"}
+{"seq":4,"t":"2026-09-29T08:39:52.367Z","kind":"step","detail":{"stepId":"holder-login","op":"login","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/login","banner":"登录成功（holder_rc）"}},"actor":"holder"}
+{"seq":5,"t":"2026-09-29T08:39:52.933Z","kind":"step","detail":{"stepId":"holder-nav-reserve","op":"navigate","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/reserve?exam=exam-1"}},"actor":"holder"}
+{"seq":6,"t":"2026-09-29T08:39:53.531Z","kind":"step","detail":{"stepId":"holder-submit-reserve","op":"submit","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/reserve","banner":"预约成功，座位号 1"}},"actor":"holder"}
+{"seq":7,"t":"2026-09-29T08:39:54.758Z","kind":"step","detail":{"stepId":"c1-register","op":"register","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/register","banner":"注册成功（contender1_rc）"}},"actor":"contender1"}
+{"seq":8,"t":"2026-09-29T08:39:55.883Z","kind":"step","detail":{"stepId":"c1-login","op":"login","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/login","banner":"登录成功（contender1_rc）"}},"actor":"contender1"}
+{"seq":9,"t":"2026-09-29T08:39:56.459Z","kind":"step","detail":{"stepId":"c1-nav-reserve","op":"navigate","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/reserve?exam=exam-1"}},"actor":"contender1"}
+{"seq":10,"t":"2026-09-29T08:39:57.668Z","kind":"step","detail":{"stepId":"c2-register","op":"register","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/register","banner":"注册成功（contender2_rc）"}},"actor":"contender2"}
+{"seq":11,"t":"2026-09-29T08:39:58.802Z","kind":"step","detail":{"stepId":"c2-login","op":"login","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/login","banner":"登录成功（contender2_rc）"}},"actor":"contender2"}
+{"seq":12,"t":"2026-09-29T08:39:59.363Z","kind":"step","detail":{"stepId":"c2-nav-reserve","op":"navigate","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/reserve?exam=exam-1"}},"actor":"contender2"}
+{"seq":13,"t":"2026-09-29T08:39:59.992Z","kind":"step","detail":{"stepId":"c1-submit-reserve","op":"submit","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/reserve","banner":"预约成功，座位号 2"}},"actor":"contender1"}
+{"seq":14,"t":"2026-09-29T08:39:59.992Z","kind":"step","detail":{"stepId":"c2-submit-reserve","op":"submit","outcome":"completed","detail":{"url":"http://127.0.0.1:55791/reserve","banner":"座位已被占先，您已加入候补队列，位置 1"}},"actor":"contender2"}
+{"seq":15,"t":"2026-09-29T08:40:00.005Z","kind":"observe","detail":{"observerId":"seat-count","rows":1,"columns":["n"],"evidence":1}}
+{"seq":16,"t":"2026-09-29T08:40:00.009Z","kind":"observe","detail":{"observerId":"seats-left","rows":1,"columns":["left"],"evidence":1}}
+{"seq":17,"t":"2026-09-29T08:40:00.009Z","kind":"assert","detail":{"assertionId":"exactly-one-winner","ruleId":"reservation-recorded","verdict":"held","observed":2,"expected":"eq 2"},"causation":15}
+{"seq":18,"t":"2026-09-29T08:40:00.010Z","kind":"assert","detail":{"assertionId":"no-overbooking","ruleId":"capacity-not-exceeded","verdict":"held","observed":0,"expected":"gte 0"},"causation":16}
+{"seq":19,"t":"2026-09-29T08:40:00.010Z","kind":"verdict","detail":{"verdict":"passed"}}
+{"seq":20,"t":"2026-09-29T08:40:00.380Z","kind":"torn-down","detail":{"paths":["D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfe4br-aff4f04b\\data\\app.db","D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfe4br-aff4f04b\\data"]}}

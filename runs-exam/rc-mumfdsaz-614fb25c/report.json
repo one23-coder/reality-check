@@ -1,0 +1,590 @@
+{
+  "protocol": {
+    "result": "1.0"
+  },
+  "runId": "rc-mumfdsaz-614fb25c",
+  "scenarioId": "exam-normal",
+  "scenarioSha256": "6a6b6d020e0ac4b8d99f29962be7b40b16704c7191777f7878bd32e99e6b127d",
+  "seed": 17,
+  "startedAt": "2026-09-29T08:39:33.516Z",
+  "finishedAt": "2026-09-29T08:39:42.887Z",
+  "verdict": "passed",
+  "ruleEvaluations": [
+    {
+      "ruleId": "reservation-recorded",
+      "assertionId": "alice-reservation-recorded",
+      "verdict": "held",
+      "observed": 2,
+      "expected": "eq 2",
+      "evidenceRefs": [
+        {
+          "kind": "sql-dump",
+          "file": "evidence/obs-seat-count-1.json",
+          "seq": 1,
+          "sha256": "ffbcb64f7fa2096b8753b878885ab8dcd22f64ad70bcc55fba0d4fda0b65e7cd"
+        }
+      ]
+    },
+    {
+      "ruleId": "capacity-not-exceeded",
+      "assertionId": "seats-non-negative",
+      "verdict": "held",
+      "observed": 0,
+      "expected": "gte 0",
+      "evidenceRefs": [
+        {
+          "kind": "sql-dump",
+          "file": "evidence/obs-seats-left-2.json",
+          "seq": 2,
+          "sha256": "3d3ca9107ae34964264255a3e83bfc82ba18f31062e220d4b7d0aa356daa6fbe"
+        }
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "seq": 0,
+      "t": "2026-09-29T08:39:33.519Z",
+      "kind": "run-started",
+      "detail": {
+        "scenarioId": "exam-normal",
+        "seed": 17,
+        "scenarioSha256": "6a6b6d020e0ac4b8d99f29962be7b40b16704c7191777f7878bd32e99e6b127d"
+      }
+    },
+    {
+      "seq": 1,
+      "t": "2026-09-29T08:39:34.784Z",
+      "kind": "env-ready",
+      "detail": {
+        "appVersion": "0.1.0",
+        "adapterVersion": "0.1.0",
+        "baseUrl": "http://127.0.0.1:55028",
+        "seed": 17,
+        "platform": "win32",
+        "dbPath": "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfdsaz-614fb25c\\data\\app.db"
+      }
+    },
+    {
+      "seq": 2,
+      "t": "2026-09-29T08:39:34.793Z",
+      "kind": "accounts-registered",
+      "detail": {
+        "count": 2
+      }
+    },
+    {
+      "seq": 3,
+      "t": "2026-09-29T08:39:36.391Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/register",
+          "banner": "注册成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 4,
+      "t": "2026-09-29T08:39:37.540Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/login",
+          "banner": "登录成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 5,
+      "t": "2026-09-29T08:39:38.109Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve?exam=exam-1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 6,
+      "t": "2026-09-29T08:39:38.717Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve",
+          "banner": "预约成功，座位号 1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 7,
+      "t": "2026-09-29T08:39:39.960Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/register",
+          "banner": "注册成功（alice_rc）"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 8,
+      "t": "2026-09-29T08:39:41.141Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/login",
+          "banner": "登录成功（alice_rc）"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 9,
+      "t": "2026-09-29T08:39:41.733Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve?exam=exam-1"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 10,
+      "t": "2026-09-29T08:39:42.362Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve",
+          "banner": "预约成功，座位号 2"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 11,
+      "t": "2026-09-29T08:39:42.398Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seat-count",
+        "rows": 1,
+        "columns": [
+          "n"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 12,
+      "t": "2026-09-29T08:39:42.414Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seats-left",
+        "rows": 1,
+        "columns": [
+          "left"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 13,
+      "t": "2026-09-29T08:39:42.415Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "alice-reservation-recorded",
+        "ruleId": "reservation-recorded",
+        "verdict": "held",
+        "observed": 2,
+        "expected": "eq 2"
+      },
+      "causation": 11
+    },
+    {
+      "seq": 14,
+      "t": "2026-09-29T08:39:42.416Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "seats-non-negative",
+        "ruleId": "capacity-not-exceeded",
+        "verdict": "held",
+        "observed": 0,
+        "expected": "gte 0"
+      },
+      "causation": 12
+    },
+    {
+      "seq": 15,
+      "t": "2026-09-29T08:39:42.417Z",
+      "kind": "verdict",
+      "detail": {
+        "verdict": "passed"
+      }
+    },
+    {
+      "seq": 16,
+      "t": "2026-09-29T08:39:42.886Z",
+      "kind": "torn-down",
+      "detail": {
+        "paths": [
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfdsaz-614fb25c\\data\\app.db",
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfdsaz-614fb25c\\data"
+        ]
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "stepId": "holder-register",
+      "actor": "holder",
+      "op": "register",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/register",
+        "banner": "注册成功（holder_rc）"
+      }
+    },
+    {
+      "stepId": "holder-login",
+      "actor": "holder",
+      "op": "login",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/login",
+        "banner": "登录成功（holder_rc）"
+      }
+    },
+    {
+      "stepId": "holder-nav-reserve",
+      "actor": "holder",
+      "op": "navigate",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/reserve?exam=exam-1"
+      }
+    },
+    {
+      "stepId": "holder-submit-reserve",
+      "actor": "holder",
+      "op": "submit",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/reserve",
+        "banner": "预约成功，座位号 1"
+      }
+    },
+    {
+      "stepId": "alice-register",
+      "actor": "alice",
+      "op": "register",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/register",
+        "banner": "注册成功（alice_rc）"
+      }
+    },
+    {
+      "stepId": "alice-login",
+      "actor": "alice",
+      "op": "login",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/login",
+        "banner": "登录成功（alice_rc）"
+      }
+    },
+    {
+      "stepId": "alice-nav-reserve",
+      "actor": "alice",
+      "op": "navigate",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/reserve?exam=exam-1"
+      }
+    },
+    {
+      "stepId": "alice-submit-reserve",
+      "actor": "alice",
+      "op": "submit",
+      "outcome": "completed",
+      "detail": {
+        "url": "http://127.0.0.1:55028/reserve",
+        "banner": "预约成功，座位号 2"
+      }
+    }
+  ],
+  "env": {
+    "appVersion": "0.1.0",
+    "adapterVersion": "0.1.0",
+    "baseUrl": "http://127.0.0.1:55028",
+    "seed": 17,
+    "platform": "win32",
+    "dbPath": "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfdsaz-614fb25c\\data\\app.db"
+  },
+  "evidence": [
+    {
+      "kind": "sql-dump",
+      "file": "evidence/obs-seat-count-1.json",
+      "seq": 1,
+      "sha256": "ffbcb64f7fa2096b8753b878885ab8dcd22f64ad70bcc55fba0d4fda0b65e7cd"
+    },
+    {
+      "kind": "sql-dump",
+      "file": "evidence/obs-seats-left-2.json",
+      "seq": 2,
+      "sha256": "3d3ca9107ae34964264255a3e83bfc82ba18f31062e220d4b7d0aa356daa6fbe"
+    }
+  ],
+  "events": [
+    {
+      "seq": 0,
+      "t": "2026-09-29T08:39:33.519Z",
+      "kind": "run-started",
+      "detail": {
+        "scenarioId": "exam-normal",
+        "seed": 17,
+        "scenarioSha256": "6a6b6d020e0ac4b8d99f29962be7b40b16704c7191777f7878bd32e99e6b127d"
+      }
+    },
+    {
+      "seq": 1,
+      "t": "2026-09-29T08:39:34.784Z",
+      "kind": "env-ready",
+      "detail": {
+        "appVersion": "0.1.0",
+        "adapterVersion": "0.1.0",
+        "baseUrl": "http://127.0.0.1:55028",
+        "seed": 17,
+        "platform": "win32",
+        "dbPath": "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfdsaz-614fb25c\\data\\app.db"
+      }
+    },
+    {
+      "seq": 2,
+      "t": "2026-09-29T08:39:34.793Z",
+      "kind": "accounts-registered",
+      "detail": {
+        "count": 2
+      }
+    },
+    {
+      "seq": 3,
+      "t": "2026-09-29T08:39:36.391Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/register",
+          "banner": "注册成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 4,
+      "t": "2026-09-29T08:39:37.540Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/login",
+          "banner": "登录成功（holder_rc）"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 5,
+      "t": "2026-09-29T08:39:38.109Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve?exam=exam-1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 6,
+      "t": "2026-09-29T08:39:38.717Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "holder-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve",
+          "banner": "预约成功，座位号 1"
+        }
+      },
+      "actor": "holder"
+    },
+    {
+      "seq": 7,
+      "t": "2026-09-29T08:39:39.960Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-register",
+        "op": "register",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/register",
+          "banner": "注册成功（alice_rc）"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 8,
+      "t": "2026-09-29T08:39:41.141Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-login",
+        "op": "login",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/login",
+          "banner": "登录成功（alice_rc）"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 9,
+      "t": "2026-09-29T08:39:41.733Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-nav-reserve",
+        "op": "navigate",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve?exam=exam-1"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 10,
+      "t": "2026-09-29T08:39:42.362Z",
+      "kind": "step",
+      "detail": {
+        "stepId": "alice-submit-reserve",
+        "op": "submit",
+        "outcome": "completed",
+        "detail": {
+          "url": "http://127.0.0.1:55028/reserve",
+          "banner": "预约成功，座位号 2"
+        }
+      },
+      "actor": "alice"
+    },
+    {
+      "seq": 11,
+      "t": "2026-09-29T08:39:42.398Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seat-count",
+        "rows": 1,
+        "columns": [
+          "n"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 12,
+      "t": "2026-09-29T08:39:42.414Z",
+      "kind": "observe",
+      "detail": {
+        "observerId": "seats-left",
+        "rows": 1,
+        "columns": [
+          "left"
+        ],
+        "evidence": 1
+      }
+    },
+    {
+      "seq": 13,
+      "t": "2026-09-29T08:39:42.415Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "alice-reservation-recorded",
+        "ruleId": "reservation-recorded",
+        "verdict": "held",
+        "observed": 2,
+        "expected": "eq 2"
+      },
+      "causation": 11
+    },
+    {
+      "seq": 14,
+      "t": "2026-09-29T08:39:42.416Z",
+      "kind": "assert",
+      "detail": {
+        "assertionId": "seats-non-negative",
+        "ruleId": "capacity-not-exceeded",
+        "verdict": "held",
+        "observed": 0,
+        "expected": "gte 0"
+      },
+      "causation": 12
+    },
+    {
+      "seq": 15,
+      "t": "2026-09-29T08:39:42.417Z",
+      "kind": "verdict",
+      "detail": {
+        "verdict": "passed"
+      }
+    },
+    {
+      "seq": 16,
+      "t": "2026-09-29T08:39:42.886Z",
+      "kind": "torn-down",
+      "detail": {
+        "paths": [
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfdsaz-614fb25c\\data\\app.db",
+          "D:\\aimanage\\Reality Check\\runs-exam\\rc-mumfdsaz-614fb25c\\data"
+        ]
+      }
+    }
+  ]
+}

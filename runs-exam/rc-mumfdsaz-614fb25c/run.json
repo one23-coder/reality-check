@@ -1,0 +1,18 @@
+{
+  "protocol": {
+    "artifacts": "1.0"
+  },
+  "runId": "rc-mumfdsaz-614fb25c",
+  "scenarioId": "exam-normal",
+  "scenarioSha256": "6a6b6d020e0ac4b8d99f29962be7b40b16704c7191777f7878bd32e99e6b127d",
+  "seed": 17,
+  "startedAt": "2026-09-29T08:39:33.516Z",
+  "versions": {
+    "scenario": "1.0",
+    "result": "1.0",
+    "artifacts": "1.0",
+    "manifest": "1.0",
+    "adapter": "0.1.0"
+  },
+  "platform": "win32 x64 node v22.18.0"
+}
