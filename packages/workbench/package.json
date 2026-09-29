@@ -1,0 +1,22 @@
+{
+  "name": "@rc/workbench",
+  "version": "0.1.0",
+  "description": "本地演练工作台 (方案 §6 阶段 2): 本地页面管理场景与运行记录、复跑、草案生成 — 复用同一执行内核与结果协议",
+  "type": "module",
+  "bin": { "rc-workbench": "./dist/src/main.js" },
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/src/main.js"
+  },
+  "dependencies": {
+    "@rc/protocol": "0.1.0",
+    "@rc/core": "0.1.0",
+    "@rc/adapter-local-web": "0.1.0",
+    "@rc/reporter": "0.1.0",
+    "@rc/planner": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0"
+  }
+}

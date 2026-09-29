@@ -3,17 +3,18 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "engines": { "node": ">=22.13.0" },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "workspaces": [
     "packages/*",
     "fixtures/*"
   ],
   "scripts": {
-    "build": "tsc -b packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli fixtures/booking-app fixtures/exam-seat-app",
-    "typecheck": "tsc -b --force packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli fixtures/booking-app fixtures/exam-seat-app",
-    "test:unit": "node --test --test-reporter=spec \"packages/protocol/dist/test/*.test.js\" \"packages/core/dist/test/*.test.js\" \"packages/planner/dist/test/*.test.js\"",
-    "test:e2e": "node --test --test-reporter=spec --test-timeout=180000 \"packages/core/dist/test/e2e/*.test.js\"",
-    "test": "npm run test:unit && npm run test:e2e"
+    "build": "tsc -b packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli packages/workbench packages/mcp-server fixtures/booking-app fixtures/exam-seat-app",
+    "typecheck": "tsc -b --force packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli packages/workbench packages/mcp-server fixtures/booking-app fixtures/exam-seat-app",
+    "test": "node --test --test-timeout=180000 \"packages/*/dist/test/**/*.test.js\"",
+    "verify": "npm run typecheck && npm run build && npm test"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

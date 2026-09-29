@@ -1,0 +1,80 @@
+# Reality Check CI (阶段3 §7).
+#
+# - Matrix: ubuntu-latest + windows-latest (首发系统 §2: Windows 与 Linux).
+# - Steps call EXACTLY the root package.json scripts: `npm run build`, `npm test`.
+# - Real-browser e2e tests (adapter-local-web / core / cli) launch Chromium from
+#   the ms-playwright cache. CI runners have no browsers preinstalled and
+#   playwright-core (the repo's dependency) ships NO installer, so Chromium is
+#   installed explicitly with `npx playwright@1.56.0 install chromium` — pinned
+#   to the playwright-core version in packages/adapter-local-web — BEFORE npm
+#   test. Ubuntu additionally needs --with-deps for the system libraries.
+# - clean-env-twice: 方案 §7 审查项「连续两轮 CI，第二轮不受第一轮影响」——
+#   the same runner runs npm test twice in a row; run 2 must pass identically,
+#   proving run-to-run data isolation (no leftover accounts/data, §10).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build (tsc -b, root build script)
+        run: npm run build
+
+      - name: Install Playwright Chromium (Linux, with system deps)
+        if: runner.os == 'Linux'
+        run: npx playwright@1.56.0 install chromium --with-deps
+
+      - name: Install Playwright Chromium (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: npx playwright@1.56.0 install chromium
+
+      - name: Test (root test script)
+        run: npm test
+
+  clean-env-twice:
+    name: clean-env-twice (two consecutive test rounds, one runner)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build (tsc -b, root build script)
+        run: npm run build
+
+      - name: Install Playwright Chromium (with system deps)
+        run: npx playwright@1.56.0 install chromium --with-deps
+
+      - name: Test — round 1
+        run: npm test
+
+      - name: Test — round 2 (must be unaffected by round 1)
+        run: npm test

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本地演练工作台 · Reality Check</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --border: #d9dee5; --text: #1d2733;
+    --muted: #64748b; --accent: #2563eb;
+    --pass-bg: #dcfce7; --pass-tx: #166534;
+    --fail-bg: #fee2e2; --fail-tx: #991b1b;
+    --incon-bg: #ffedd5; --incon-tx: #9a3412;
+    --block-bg: #e2e8f0; --block-tx: #334155;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+         background: var(--bg); color: var(--text); font-size: 14px; }
+  header { background: #101827; color: #fff; padding: 14px 24px; }
+  header h1 { margin: 0 0 4px; font-size: 18px; }
+  header .note { color: #94a3b8; font-size: 12px; }
+  header .note b.historical { color: #fbbf24; }
+  header .note b.fresh { color: #4ade80; }
+  main { max-width: 1200px; margin: 0 auto; padding: 16px 24px 48px; }
+  section.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+                 padding: 16px; margin-top: 16px; }
+  h2 { margin: 0 0 10px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  td.mono, .mono { font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.passed, .badge.held { background: var(--pass-bg); color: var(--pass-tx); }
+  .badge.failed, .badge.violated { background: var(--fail-bg); color: var(--fail-tx); }
+  .badge.inconclusive { background: var(--incon-bg); color: var(--incon-tx); }
+  .badge.blocked, .badge.not-evaluated { background: var(--block-bg); color: var(--block-tx); }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .tag.historical { background: #fef3c7; color: #92400e; }
+  .tag.fresh { background: #dcfce7; color: #166534; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 12px; }
+  input, select, textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--border);
+    border-radius: 6px; font: inherit; font-size: 13px; }
+  textarea { min-height: 72px; font-family: Consolas, monospace; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+           padding: 8px 16px; font: inherit; font-size: 13px; cursor: pointer; margin-top: 10px; }
+  button.secondary { background: #475569; }
+  button:disabled { opacity: .5; cursor: default; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .err { color: var(--fail-tx); background: var(--fail-bg); padding: 8px; border-radius: 6px; margin-top: 8px; white-space: pre-wrap; }
+  .ok { color: var(--pass-tx); background: var(--pass-bg); padding: 8px; border-radius: 6px; margin-top: 8px; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 6px;
+        overflow: auto; max-height: 320px; font-size: 12px; }
+  a { color: var(--accent); }
+  .hidden { display: none; }
+  .scen { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; }
+  .scen b { font-size: 13px; }
+  .scen .id { color: var(--muted); font-family: Consolas, monospace; font-size: 12px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>本地演练工作台 <span class="muted" style="color:#94a3b8">Reality Check v0.2 · 方案 §6</span></h1>
+  <div class="note">运行记录详情是 <b class="historical">历史观察</b>（对已落盘时间线的回放）；「新运行」与「复跑」触发真实执行，产生 <b class="fresh">新运行</b>。两者不可混淆。</div>
+</header>
+<main>
+
+  <section class="card">
+    <h2>场景列表 <span class="muted" id="scen-dir"></span></h2>
+    <div id="scenario-list" class="muted">加载中…</div>
+  </section>
+
+  <section class="card">
+    <h2><span class="tag fresh">新运行</span> 发起演练（真实执行：同一执行内核 + 真实浏览器）</h2>
+    <div class="grid">
+      <div>
+        <label for="run-scenario">场景</label>
+        <select id="run-scenario"></select>
+        <label for="run-seed">种子 seed（留空使用场景默认）</label>
+        <input id="run-seed" type="number" min="0" placeholder="场景默认">
+        <label for="run-fault">故障注入（应用 RC_FAULT）</label>
+        <select id="run-fault">
+          <option value="">无故障（正确实现）</option>
+          <option value="overbooking">overbooking（超卖）</option>
+          <option value="cancel-keeps-slot">cancel-keeps-slot（取消不释放名额）</option>
+          <option value="waitlist-order-wrong">waitlist-order-wrong（候补顺序错误）</option>
+        </select>
+      </div>
+      <div>
+        <label for="run-overrides">参数覆盖 overrides（JSON，可选 — 人数/角色/顺序）：{"roleAttrs":{"alice":{...}},"stepsAppend":[{"id":"x","actor":"alice","op":"click","params":{...}}],"seed":7}</label>
+        <textarea id="run-overrides" placeholder='留空 = 不修改'></textarea>
+        <button id="run-submit">开始新运行</button>
+        <div id="run-result"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>运行记录 <button class="secondary" style="margin:0 0 0 auto; padding:4px 12px;" id="runs-refresh">刷新</button></h2>
+    <table>
+      <thead><tr><th>runId</th><th>场景</th><th>结论</th><th>退出码</th><th>开始时间</th><th></th></tr></thead>
+      <tbody id="runs-body"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
+    </table>
+  </section>
+
+  <section class="card hidden" id="detail-card">
+    <h2><span class="tag historical">历史观察</span> 运行详情 <span class="muted mono" id="detail-runid"></span>
+      <button class="secondary" style="margin:0 0 0 auto;" id="rerun-btn">复跑（新运行，同场景同种子）</button></h2>
+    <div id="detail-meta" class="muted"></div>
+    <h2 style="margin-top:14px;">规则判定与证据关联</h2>
+    <table>
+      <thead><tr><th>规则</th><th>断言</th><th>判定</th><th>观察值</th><th>期望</th><th>证据</th></tr></thead>
+      <tbody id="detail-rules"></tbody>
+    </table>
+    <h2 style="margin-top:14px;">事件时间线 <span class="muted">（seq 为唯一排序依据；causation 为因果边）</span></h2>
+    <table>
+      <thead><tr><th>seq</th><th>t</th><th>kind</th><th>actor</th><th>causation</th><th>detail</th></tr></thead>
+      <tbody id="detail-timeline"></tbody>
+    </table>
+    <p class="muted">HTML 报告：<span id="detail-report" class="mono"></span></p>
+  </section>
+
+  <section class="card">
+    <h2>场景草案（需求文本 → 规则与场景草案）</h2>
+    <p class="muted">草案只用于评审，<b>不会自动保存</b>为可运行场景；生成物全部过结构校验，注入式请求会被拒绝。</p>
+    <label for="draft-text">需求 / README 片段</label>
+    <textarea id="draft-text" placeholder="例：帮我测一下正常报名 3人"></textarea>
+    <button id="draft-submit">生成场景草案</button>
+    <div id="draft-result"></div>
+  </section>
+
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");
+const VERDICT_ZH = { passed:"通过", failed:"失败", inconclusive:"无法判定", blocked:"受阻",
+                     held:"成立", violated:"违规", "not-evaluated":"未判定" };
+
+function badge(v) {
+  const cls = ["passed","failed","inconclusive","blocked","held","violated","not-evaluated"].includes(v) ? v : "blocked";
+  return `<span class="badge ${cls}">${esc(v)} · ${VERDICT_ZH[v] || "?"}</span>`;
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  let body = null;
+  try { body = await res.json(); } catch { /* non-json */ }
+  return { status: res.status, body };
+}
+
+async function loadScenarios() {
+  const { body } = await api("/api/scenarios");
+  const list = Array.isArray(body) ? body : [];
+  $("scenario-list").innerHTML = list.length === 0
+    ? "（scenariosDir 中没有场景）"
+    : list.map((s) => `<div class="scen"><b>${esc(s.name)}</b><span class="id">${esc(s.id)}</span>
+        <div class="muted">${esc(s.description)}</div>
+        <div class="muted">规则数：${s.rules}${s.error ? " · ⚠ 校验失败: " + esc(s.error) : ""}</div></div>`).join("");
+  $("run-scenario").innerHTML = list.filter((s) => !s.error)
+    .map((s) => `<option value="${esc(s.id)}">${esc(s.name)}（${esc(s.id)}）</option>`).join("");
+}
+
+async function loadRuns() {
+  const { body } = await api("/api/runs");
+  const runs = Array.isArray(body) ? body : [];
+  $("runs-body").innerHTML = runs.length === 0
+    ? `<tr><td colspan="6" class="muted">暂无运行记录</td></tr>`
+    : runs.map((r) => `<tr>
+        <td class="mono">${esc(r.runId)}</td><td class="mono">${esc(r.scenarioId)}</td>
+        <td>${badge(r.verdict)}</td><td>${esc(r.exitCode ?? "")}</td>
+        <td class="mono">${esc(r.startedAt)}</td>
+        <td><a href="#" onclick="openRun('${esc(r.runId)}');return false;">查看</a></td>
+      </tr>`).join("");
+}
+
+let currentDetail = null;
+
+async function openRun(runId) {
+  const { status, body } = await api(`/api/run/${encodeURIComponent(runId)}`);
+  if (status !== 200) { alert(`读取运行失败: ${body && body.error}`); return; }
+  currentDetail = body;
+  const r = body.result;
+  $("detail-card").classList.remove("hidden");
+  $("detail-runid").textContent = r.runId;
+  $("detail-meta").innerHTML =
+    `场景 <b class="mono">${esc(r.scenarioId)}</b> · seed ${esc(r.seed)} · 结论 ${badge(r.verdict)} · ` +
+    `开始 ${esc(r.startedAt)} · 结束 ${esc(r.finishedAt)} · 证据 ${r.evidence.length} 份`;
+  $("detail-rules").innerHTML = (r.ruleEvaluations || []).map((ev) => `<tr>
+      <td><b>${esc(ev.ruleId)}</b></td><td class="mono">${esc(ev.assertionId)}</td>
+      <td>${badge(ev.verdict)}</td>
+      <td class="mono">${esc(JSON.stringify(ev.observed))}</td>
+      <td class="mono">${esc(ev.expected)}</td>
+      <td>${(ev.evidenceRefs || []).map((e) =>
+        `<a href="/runs/${encodeURIComponent(runId)}/${esc(e.file)}" target="_blank">${esc(e.kind)}#${e.seq}</a>`).join("<br>") || '<span class="muted">无</span>'}</td>
+    </tr>`).join("");
+  $("detail-timeline").innerHTML = (body.events || []).map((e) => `<tr>
+      <td class="mono">${e.seq}</td><td class="mono">${esc(e.t)}</td><td>${esc(e.kind)}</td>
+      <td class="mono">${e.actor ? esc(e.actor) : ""}</td>
+      <td class="mono">${e.causation !== undefined && e.causation !== null ? e.causation : ""}</td>
+      <td class="mono">${esc(JSON.stringify(e.detail))}</td>
+    </tr>`).join("");
+  $("detail-report").innerHTML = `<a href="/runs/${encodeURIComponent(runId)}/report.html" target="_blank">${esc(body.htmlPath)}</a>`;
+  $("detail-card").scrollIntoView({ behavior: "smooth" });
+}
+
+async function startRun(payload) {
+  $("run-result").innerHTML = '<span class="muted">运行中…（真实浏览器执行，请稍候）</span>';
+  const { status, body } = await api("/api/run", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+  });
+  if (status !== 200) {
+    $("run-result").innerHTML = `<div class="err">新运行被拒（HTTP ${status}）：${esc(body && body.error)}</div>`;
+    return;
+  }
+  $("run-result").innerHTML =
+    `<div class="ok"><span class="tag fresh">新运行</span> 完成：runId <span class="mono">${esc(body.runId)}</span> · ` +
+    `${badge(body.verdict)} · 退出码 ${body.exitCode} · <a href="#" onclick="openRun('${esc(body.runId)}');return false;">查看历史观察</a></div>`;
+  await loadRuns();
+}
+
+$("run-submit").addEventListener("click", () => {
+  const payload = { scenarioId: $("run-scenario").value };
+  const seed = $("run-seed").value.trim();
+  if (seed !== "") payload.seed = Number(seed);
+  const fault = $("run-fault").value;
+  if (fault !== "") payload.fault = fault;
+  const ov = $("run-overrides").value.trim();
+  if (ov !== "") {
+    try { payload.overrides = JSON.parse(ov); }
+    catch (e) { $("run-result").innerHTML = `<div class="err">overrides 不是合法 JSON：${esc(e.message)}</div>`; return; }
+  }
+  startRun(payload);
+});
+
+$("rerun-btn").addEventListener("click", () => {
+  if (!currentDetail) return;
+  const r = currentDetail.result;
+  startRun({ scenarioId: r.scenarioId, seed: r.seed });
+});
+
+$("draft-submit").addEventListener("click", async () => {
+  const text = $("draft-text").value.trim();
+  $("draft-result").innerHTML = '<span class="muted">生成中…</span>';
+  const { status, body } = await api("/api/draft", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }),
+  });
+  if (status === 422 && body && body.rejected === "injection-guard") {
+    $("draft-result").innerHTML = '<div class="err">已拒绝：检测到注入式请求（诱导执行脚本/覆盖指令），生成器不会处理。</div>';
+    return;
+  }
+  if (status !== 200) {
+    $("draft-result").innerHTML = `<div class="err">草案生成失败（HTTP ${status}）：${esc(body && body.error)}</div>`;
+    return;
+  }
+  const d = body.decision || {};
+  $("draft-result").innerHTML =
+    `<div class="${body.valid ? "ok" : "err"}">草案（isDraft=true，未保存）结构校验：${body.valid ? "通过" : "失败"}` +
+    `${body.errors ? "<br>" + body.errors.map(esc).join("<br>") : ""}</div>` +
+    `<p class="muted">规划决策：fallback=${esc(d.fallback)} · needsModel=${esc(d.needsModel)} · params=${esc(JSON.stringify(d.params || {}))}<br>${esc(d.reason || "")}</p>` +
+    `<pre>${esc(JSON.stringify(body.draft, null, 2))}</pre>`;
+});
+
+$("runs-refresh").addEventListener("click", loadRuns);
+loadScenarios().then(loadRuns);
+</script>
+</body>
+</html>
