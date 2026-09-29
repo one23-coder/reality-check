@@ -99,7 +99,7 @@ const OBSERVERS: Record<string, { sql: string; tables: string[]; columns: string
     columns: ["account"],
   },
   "reservation-holder": {
-    sql: "SELECT account FROM reservations WHERE exam_id = 'exam-1' AND account <> 'holder_rc' ORDER BY id ASC LIMIT 1",
+    sql: "SELECT account FROM reservations WHERE exam_id = 'exam-1' AND account NOT IN ('holder_rc','holder2_rc') ORDER BY id ASC LIMIT 1",
     tables: ["reservations"],
     columns: ["account"],
   },

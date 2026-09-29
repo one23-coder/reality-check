@@ -1,51 +1,249 @@
 {
-  "protocol": { "scenario": "1.0" },
+  "protocol": {
+    "scenario": "1.0"
+  },
   "id": "exam-cancel-waitlist",
   "name": "取消候补递补",
   "description": "两个 holder 依次显式预约占满座位（exam-1 容量 2，内核不向适配器传角色种子，占用意图由 seedRole 声明 + 显式预约步骤保证，规则 7），bob 预约时座位已满、进入候补队列，随后 holder 取消预约。正确实现按候补队列声明顺序递补队首：reservations 保持满员 2 条、seats-left 回到 0、waitlist 清空。cancel-keeps-seat 故障只删预约不递补（reservations=1、seats-left=1），cancel-releases-seat 规则违规归因。已知局限：适配器清单中不存在 exams 侧的候补队列观察器（waitlist-head/waitlist-order 的 SQL 硬编码 course_id='course-1'，exam 库 waitlist 表无此列，读取必然报错），且场景协议 1.0 的 AssertOp 只有数值比较、无字符串等值断言，因此 waitlist-declared-order 在本场景只能以数值观察器表达（递补后 seats-left 回到 0），队列顺序本体无法作为断言主体、也不声明必然报错的队列观察器；waitlist-order-wrong 故障在单元素队列上与正确实现状态同构，其甄别依赖多候补扩展与队列证据能力。",
   "app": "exam-seat-app",
   "seed": 23,
   "roles": [
-    { "id": "holder", "account": { "username": "holder_rc", "password": "pw-holder" }, "seedRole": "holder" },
-    { "id": "holder2", "account": { "username": "holder2_rc", "password": "pw-holder2" }, "seedRole": "holder" },
-    { "id": "bob", "account": { "username": "bob_rc", "password": "pw-bob" }, "seedRole": "none" }
+    {
+      "id": "holder",
+      "account": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      },
+      "seedRole": "holder"
+    },
+    {
+      "id": "holder2",
+      "account": {
+        "username": "holder2_rc",
+        "password": "pw-holder2"
+      },
+      "seedRole": "holder"
+    },
+    {
+      "id": "bob",
+      "account": {
+        "username": "bob_rc",
+        "password": "pw-bob"
+      },
+      "seedRole": "none"
+    },
+    {
+      "id": "carol",
+      "account": {
+        "username": "carol_rc",
+        "password": "pw-carol"
+      },
+      "seedRole": "none"
+    }
   ],
   "steps": [
-    { "id": "holder-register", "actor": "holder", "op": "register", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-login", "actor": "holder", "op": "login", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-nav-reserve", "actor": "holder", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },
-    { "id": "holder-submit-reserve", "actor": "holder", "op": "submit" },
-    { "id": "holder2-register", "actor": "holder2", "op": "register", "params": { "username": "holder2_rc", "password": "pw-holder2" } },
-    { "id": "holder2-login", "actor": "holder2", "op": "login", "params": { "username": "holder2_rc", "password": "pw-holder2" } },
-    { "id": "holder2-nav-reserve", "actor": "holder2", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },
-    { "id": "holder2-submit-reserve", "actor": "holder2", "op": "submit" },
-    { "id": "bob-register", "actor": "bob", "op": "register", "params": { "username": "bob_rc", "password": "pw-bob" } },
-    { "id": "bob-login", "actor": "bob", "op": "login", "params": { "username": "bob_rc", "password": "pw-bob" } },
-    { "id": "bob-nav-reserve", "actor": "bob", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },
-    { "id": "bob-submit-reserve", "actor": "bob", "op": "submit" },
-    { "id": "holder-nav-cancel", "actor": "holder", "op": "navigate", "params": { "path": "/cancel?exam=exam-1" } },
-    { "id": "holder-submit-cancel", "actor": "holder", "op": "submit" }
+    {
+      "id": "holder-register",
+      "actor": "holder",
+      "op": "register",
+      "params": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      }
+    },
+    {
+      "id": "holder-login",
+      "actor": "holder",
+      "op": "login",
+      "params": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      }
+    },
+    {
+      "id": "holder-nav-reserve",
+      "actor": "holder",
+      "op": "navigate",
+      "params": {
+        "path": "/reserve?exam=exam-1"
+      }
+    },
+    {
+      "id": "holder-submit-reserve",
+      "actor": "holder",
+      "op": "submit"
+    },
+    {
+      "id": "holder2-register",
+      "actor": "holder2",
+      "op": "register",
+      "params": {
+        "username": "holder2_rc",
+        "password": "pw-holder2"
+      }
+    },
+    {
+      "id": "holder2-login",
+      "actor": "holder2",
+      "op": "login",
+      "params": {
+        "username": "holder2_rc",
+        "password": "pw-holder2"
+      }
+    },
+    {
+      "id": "holder2-nav-reserve",
+      "actor": "holder2",
+      "op": "navigate",
+      "params": {
+        "path": "/reserve?exam=exam-1"
+      }
+    },
+    {
+      "id": "holder2-submit-reserve",
+      "actor": "holder2",
+      "op": "submit"
+    },
+    {
+      "id": "bob-register",
+      "actor": "bob",
+      "op": "register",
+      "params": {
+        "username": "bob_rc",
+        "password": "pw-bob"
+      }
+    },
+    {
+      "id": "bob-login",
+      "actor": "bob",
+      "op": "login",
+      "params": {
+        "username": "bob_rc",
+        "password": "pw-bob"
+      }
+    },
+    {
+      "id": "bob-nav-reserve",
+      "actor": "bob",
+      "op": "navigate",
+      "params": {
+        "path": "/reserve?exam=exam-1"
+      }
+    },
+    {
+      "id": "bob-submit-reserve",
+      "actor": "bob",
+      "op": "submit"
+    },
+    {
+      "id": "carol-register",
+      "actor": "carol",
+      "op": "register",
+      "params": {
+        "username": "carol_rc",
+        "password": "pw-carol"
+      }
+    },
+    {
+      "id": "carol-login",
+      "actor": "carol",
+      "op": "login",
+      "params": {
+        "username": "carol_rc",
+        "password": "pw-carol"
+      }
+    },
+    {
+      "id": "carol-nav-reserve",
+      "actor": "carol",
+      "op": "navigate",
+      "params": {
+        "path": "/reserve?exam=exam-1"
+      }
+    },
+    {
+      "id": "carol-submit-reserve",
+      "actor": "carol",
+      "op": "submit"
+    },
+    {
+      "id": "holder-nav-cancel",
+      "actor": "holder",
+      "op": "navigate",
+      "params": {
+        "path": "/cancel?exam=exam-1"
+      }
+    },
+    {
+      "id": "holder-submit-cancel",
+      "actor": "holder",
+      "op": "submit"
+    }
   ],
   "observers": [
     {
       "id": "seat-count",
       "sql": "SELECT COUNT(*) AS n FROM reservations",
-      "tables": ["reservations"],
-      "expectColumns": ["n"]
+      "tables": [
+        "reservations"
+      ],
+      "expectColumns": [
+        "n"
+      ]
     },
     {
       "id": "seats-left",
       "sql": "SELECT capacity - (SELECT COUNT(*) FROM reservations WHERE reservations.exam_id = exams.id) AS left FROM exams WHERE id = 'exam-1'",
-      "tables": ["exams", "reservations"],
-      "expectColumns": ["left"]
+      "tables": [
+        "exams",
+        "reservations"
+      ],
+      "expectColumns": [
+        "left"
+      ]
+    },
+    {
+      "id": "reservation-holder",
+      "sql": "SELECT account FROM reservations WHERE exam_id = 'exam-1' AND account NOT IN ('holder_rc','holder2_rc') ORDER BY id ASC LIMIT 1",
+      "tables": [
+        "reservations"
+      ],
+      "expectColumns": [
+        "account"
+      ]
     }
   ],
   "assertions": [
-    { "id": "seat-refilled-by-promotion", "rule": "cancel-releases-seat", "observer": "seat-count", "op": "eq", "value": 2 },
-    { "id": "seats-back-to-full", "rule": "waitlist-declared-order", "observer": "seats-left", "op": "lte", "value": 0 }
+    {
+      "id": "seat-refilled-by-promotion",
+      "rule": "cancel-releases-seat",
+      "observer": "seat-count",
+      "op": "eq",
+      "value": 2
+    },
+    {
+      "id": "seats-back-to-full",
+      "rule": "waitlist-declared-order",
+      "observer": "seats-left",
+      "op": "lte",
+      "value": 0
+    },
+    {
+      "id": "promotion-respects-declared-order",
+      "rule": "waitlist-declared-order",
+      "observer": "reservation-holder",
+      "op": "eqStr",
+      "expected": "bob_rc"
+    }
   ],
   "rules": [
-    { "id": "cancel-releases-seat", "description": "取消释放的座位被候补递补回填：reservations 保持容量 2（holder 取消 + 队首递补）；cancel-keeps-seat 故障只删不补使 reservations 掉到 1" },
-    { "id": "waitlist-declared-order", "description": "递补按声明的候补队列完成，剩余座位回到 0 不留空也不超订；受限于 exams 侧无候补队列观察器且协议 1.0 无字符串断言，本规则仅以数值观察器表达，队列顺序本体依赖多候补扩展（见场景 description 的已知局限）" }
+    {
+      "id": "cancel-releases-seat",
+      "description": "取消释放的座位被候补递补回填：reservations 保持容量 2（holder 取消 + 队首递补）；cancel-keeps-seat 故障只删不补使 reservations 掉到 1"
+    },
+    {
+      "id": "waitlist-declared-order",
+      "description": "递补按声明的候补队列顺序完成：队首 bob_rc 获得递补名额（reservation-holder eqStr bob_rc）。waitlist-order-wrong 递补队尾 carol_rc 时违规；cancel-keeps-seat 无递补时违规。"
+    }
   ]
 }

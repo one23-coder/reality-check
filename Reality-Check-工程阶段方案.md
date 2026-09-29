@@ -2,7 +2,7 @@
 
 日期：2026-09-28（本文取代 2026-09-22 版「工程阶段方案」）  
 定位：面向 localhost 项目的本地业务演练工具。  
-当前状态：**阶段 0 已完成并通过实测；阶段 1 主体已实现并实测通过，剩 4 项收尾任务**（见第 3 节与第 6 节）。阶段 2–4 为已定义路线，未开始。
+当前状态：**阶段 0–4 全部实现并通过实测验收（2026-09-29），v0.1.0 已打标签**；验收证据见文末附录 A。下文各阶段正文保留原定义与审查方法。
 
 ---
 
@@ -251,3 +251,44 @@ CLI（已有）／工作台／MCP／CI
 时间不足时推迟工作台、源码深度诊断、自动扩展场景、MCP 与更多业务类型；**数据隔离、正反例配对、第二项目接入、复跑能力永不裁剪**。
 
 首个版本的完成定义：用户能在支持范围内接入自己的项目，运行明确业务场景，拿到可信证据，并在修复后重新验证。
+
+---
+
+## 附录 A：验收证据（2026-09-29 实测记录，✅ 均有运行目录/退出码可查）
+
+### A.1 阶段 0/1：正反例矩阵（退出码即契约）
+
+| 场景 | 正确实现 | overbooking | cancel-keeps-slot(-seat) | waitlist-order-wrong |
+| --- | --- | --- | --- | --- |
+| booking-normal | 退出码 0，通过 | — | — | — |
+| booking-contend | 退出码 0，通过 | 退出码 1，✗ capacity-not-exceeded；✓ booking-recorded 不受牵连 | — | — |
+| booking-cancel-waitlist | 退出码 0，3 断言全过 | — | 退出码 2，✗cancel-releases-slot、✗waitlist-declared-order（证据缺失项列出） | 退出码 1，✗waitlist-declared-order ×2；✓cancel-releases-slot 不受牵连 |
+| exam-normal | 退出码 0，通过 | — | — | — |
+| exam-contend | 退出码 0，通过 | 退出码 1，✗capacity-not-exceeded | — | — |
+| exam-cancel-waitlist | 退出码 0，3 断言全过 | — | 退出码 2，✗ 两规则 | 退出码 1，✗waitlist-declared-order |
+
+要点：候补顺序故障的检出依赖 `eqStr` 断言（协议 1.0 扩展，op+expected 交叉校验）与**两个候补者**（bob 队首、carol 队尾）——单候补队列下首位/末位递补状态同构，无法区分。booking 侧曾因场景步骤排序错误（carol 报名排在取消之后）导致故障无法区分，经时间线证据定位后修正。
+
+### A.2 阶段 1 收尾四项
+
+1. **blocked（退出码 3）**：config 指向不存在应用入口 → exit 3、verdict=blocked、规则全部 not-evaluated（scripts/blocked-case.mjs，三项检查 PASS）。
+2. **串行稳定性**：booking-normal 连续 10 次运行，10/10 退出码 0（scripts/serial-stability.mjs）。
+3. **第二独立应用接入**：exam-seat-app 三场景 check/run/rerun 全通；接入耗时 2–17 分钟（<30 分钟目标）；**内核零改动**（docs/接入耗时记录.md 有逐条阻碍记录）。
+4. **Linux 验证**：WSL2 Ubuntu（Node 22）npm install/build/test 99+ 项全过；CLI run/rerun/export 行为与 Windows 一致（含 overbooking 故障归因一致）。Chromium 系统库以无 root 方案（deb 本地解包 + LD_LIBRARY_PATH）补齐，已记录于 .wsl-setup.sh。
+
+### A.3 阶段 2–4
+
+- **工作台**：同一场景经工作台 API 与 CLI 运行，verdict/结果协议块/场景哈希逐字段一致；注入式草案请求被 422 拒绝；15/15 测试。
+- **MCP**：stdio 四工具（check/run/get_result/rerun）；blocked 以正常结果返回（exit 3）而非错误；恶意输入后循环存活；2/2 黑盒测试。
+- **CI**：GitHub Actions 双 OS 矩阵 + clean-env-twice（连续两轮）工作流就绪（.github/workflows/ci.yml）。
+- **适配器 SDK**：一致性套件 6/6 检查通过（清单合法、环境生命周期、证据落盘哈希、新鲜连接观察、屏障声明诚实性、所有权清理）；伪造证据的反例被正确打回；外部作者指南 docs/adapter-sdk.md。
+
+### A.4 全仓测试
+
+npm test = **103/103 通过**（Windows）；Linux 侧除 adapter-sdk dist 未入 WSL 副本少计 4 项外全过。
+
+### A.5 已知限制（如实记录，非完成暗示）
+
+1. 内核未向 setupEnv 传递 seedRole 种子（registerAccounts 走 JSON POST 与纯表单 fixture 不匹配）：角色"占用初始名额"的语义由场景**显式报名步骤**实现（方案 §3.3 规则 7 的完整内核实现为后续改进项）。
+2. cancel-keeps-slot(-seat) 故障在本 fixture 中为"取消完全无操作"，取消前后的可观察状态差仅剩候补队列不变，故含一个 inconclusive 断言，整体降级为退出码 2（方案 §10 允许的降级语义，违规均已归因）。
+3. macOS 支持未验证（方案 §2 表格约定：经实际验证后列入矩阵）。
