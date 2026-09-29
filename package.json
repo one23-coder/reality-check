@@ -11,8 +11,8 @@
     "fixtures/*"
   ],
   "scripts": {
-    "build": "tsc -b packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli packages/workbench packages/mcp-server fixtures/booking-app fixtures/exam-seat-app",
-    "typecheck": "tsc -b --force packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli packages/workbench packages/mcp-server fixtures/booking-app fixtures/exam-seat-app",
+    "build": "tsc -b packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli packages/workbench packages/mcp-server packages/adapter-sdk fixtures/booking-app fixtures/exam-seat-app",
+    "typecheck": "tsc -b --force packages/protocol packages/core packages/adapter-local-web packages/planner packages/reporter packages/cli packages/workbench packages/mcp-server packages/adapter-sdk fixtures/booking-app fixtures/exam-seat-app",
     "test": "node --test --test-timeout=180000 \"packages/*/dist/test/**/*.test.js\"",
     "verify": "npm run typecheck && npm run build && npm test"
   },

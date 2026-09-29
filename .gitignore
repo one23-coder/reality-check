@@ -3,5 +3,7 @@ dist/
 *.tsbuildinfo
 runs*/
 .wsl-*.log
+.dbg-*
+.wsl-setup.sh
 *.log
 .DS_Store
