@@ -1,0 +1,14 @@
+{
+  "name": "@rc/planner",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./dist/src/index.js" },
+  "scripts": { "build": "tsc -b" },
+  "dependencies": {
+    "@rc/protocol": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0"
+  }
+}

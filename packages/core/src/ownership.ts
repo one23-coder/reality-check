@@ -7,8 +7,8 @@
  * no ownership marker is refused (§10: 已有内容但无所有权标记时拒绝运行).
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { configError, internalError } from "./errors.js";
 
 export const OWNERSHIP_FILE = "ownership.json";
@@ -140,12 +140,6 @@ async function readdirSafe(dir: string): Promise<string[]> {
   } catch {
     return [];
   }
-}
-
-import { readdir } from "node:fs/promises";
-
-function isAbsolute(p: string): boolean {
-  return p === resolve(p);
 }
 
 export function newRunId(): string {

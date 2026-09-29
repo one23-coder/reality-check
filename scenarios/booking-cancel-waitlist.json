@@ -1,0 +1,63 @@
+{
+  "protocol": { "scenario": "1.0" },
+  "id": "booking-cancel-waitlist",
+  "name": "取消候补递补",
+  "description": "两个 holder 依次显式报名占满名额（内核不向适配器传角色种子，占用意图由 seedRole 声明 + 显式报名步骤保证，规则 7），bob 报名时课程已满、进入候补队列（waitlist-head/waitlist-order 留证），随后 holder 取消报名。正确实现按候补队列声明顺序递补队首：bookings 保持满员 2 条、capacity-left 回到 0、waitlist 清空。cancel-keeps-slot 故障只删报名不递补（bookings=1、capacity-left=1），两条规则同时违规归因。waitlist-head / waitlist-order 观察器提供队列证据（其首列为账号字符串，内核断言只比较数值，故仅作观察不作为断言主体）；waitlist-order-wrong 故障在单元素队列上与正确实现状态同构，其甄别依赖本场景的队列证据与多候补扩展。",
+  "app": "booking-app",
+  "seed": 13,
+  "roles": [
+    { "id": "holder", "account": { "username": "holder_rc", "password": "pw-holder" }, "seedRole": "holder" },
+    { "id": "holder2", "account": { "username": "holder2_rc", "password": "pw-holder2" }, "seedRole": "holder" },
+    { "id": "bob", "account": { "username": "bob_rc", "password": "pw-bob" }, "seedRole": "none" }
+  ],
+  "steps": [
+    { "id": "holder-register", "actor": "holder", "op": "register", "params": { "username": "holder_rc", "password": "pw-holder" } },
+    { "id": "holder-login", "actor": "holder", "op": "login", "params": { "username": "holder_rc", "password": "pw-holder" } },
+    { "id": "holder-nav-book", "actor": "holder", "op": "navigate", "params": { "path": "/book?course=course-1" } },
+    { "id": "holder-submit-booking", "actor": "holder", "op": "submit" },
+    { "id": "holder2-register", "actor": "holder2", "op": "register", "params": { "username": "holder2_rc", "password": "pw-holder2" } },
+    { "id": "holder2-login", "actor": "holder2", "op": "login", "params": { "username": "holder2_rc", "password": "pw-holder2" } },
+    { "id": "holder2-nav-book", "actor": "holder2", "op": "navigate", "params": { "path": "/book?course=course-1" } },
+    { "id": "holder2-submit-booking", "actor": "holder2", "op": "submit" },
+    { "id": "bob-register", "actor": "bob", "op": "register", "params": { "username": "bob_rc", "password": "pw-bob" } },
+    { "id": "bob-login", "actor": "bob", "op": "login", "params": { "username": "bob_rc", "password": "pw-bob" } },
+    { "id": "bob-nav-book", "actor": "bob", "op": "navigate", "params": { "path": "/book?course=course-1" } },
+    { "id": "bob-submit-booking", "actor": "bob", "op": "submit" },
+    { "id": "holder-nav-cancel", "actor": "holder", "op": "navigate", "params": { "path": "/cancel?course=course-1" } },
+    { "id": "holder-submit-cancel", "actor": "holder", "op": "submit" }
+  ],
+  "observers": [
+    {
+      "id": "booking-count",
+      "sql": "SELECT COUNT(*) AS n FROM bookings",
+      "tables": ["bookings"],
+      "expectColumns": ["n"]
+    },
+    {
+      "id": "capacity-left",
+      "sql": "SELECT capacity - (SELECT COUNT(*) FROM bookings WHERE bookings.course_id = courses.id) AS left FROM courses WHERE id = 'course-1'",
+      "tables": ["courses", "bookings"],
+      "expectColumns": ["left"]
+    },
+    {
+      "id": "waitlist-head",
+      "sql": "SELECT account FROM waitlist WHERE course_id = 'course-1' ORDER BY position ASC LIMIT 1",
+      "tables": ["waitlist"],
+      "expectColumns": ["account"]
+    },
+    {
+      "id": "waitlist-order",
+      "sql": "SELECT account FROM waitlist WHERE course_id = 'course-1' ORDER BY position ASC",
+      "tables": ["waitlist"],
+      "expectColumns": ["account"]
+    }
+  ],
+  "assertions": [
+    { "id": "slot-refilled-by-promotion", "rule": "cancel-releases-slot", "observer": "booking-count", "op": "eq", "value": 2 },
+    { "id": "capacity-back-to-full", "rule": "waitlist-declared-order", "observer": "capacity-left", "op": "lte", "value": 0 }
+  ],
+  "rules": [
+    { "id": "cancel-releases-slot", "description": "取消释放的名额被候补递补回填：bookings 保持容量 2（holder 取消 + 队首递补）；cancel-keeps-slot 故障只删不补使 bookings 掉到 1" },
+    { "id": "waitlist-declared-order", "description": "递补按声明的候补队列完成，剩余名额回到 0 不留空也不超订；队列本体（waitlist-head/waitlist-order）作为证据观察器记录" }
+  ]
+}

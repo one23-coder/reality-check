@@ -1,0 +1,19 @@
+{
+  "name": "@rc/cli",
+  "version": "0.1.0",
+  "description": "Reality Check CLI: check / run / rerun / export / plan (方案 §3.1 CLI 四命令)",
+  "type": "module",
+  "bin": { "reality-check": "./dist/src/main.js" },
+  "scripts": { "build": "tsc -b" },
+  "dependencies": {
+    "@rc/protocol": "0.1.0",
+    "@rc/core": "0.1.0",
+    "@rc/adapter-local-web": "0.1.0",
+    "@rc/reporter": "0.1.0",
+    "@rc/planner": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^22.0.0"
+  }
+}

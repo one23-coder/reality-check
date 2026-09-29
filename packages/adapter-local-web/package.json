@@ -1,0 +1,17 @@
+{
+  "name": "@rc/adapter-local-web",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./dist/src/index.js" },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@rc/protocol": "0.1.0",
+    "playwright-core": "^1.56.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@types/node": "^22.20.0"
+  }
+}
