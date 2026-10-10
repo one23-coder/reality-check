@@ -49,7 +49,7 @@
 | 重放含义 | 重新建立初始状态，运行相同场景；不是任意时刻恢复整个应用 |
 | 首发系统 | Windows 与 Linux；macOS 支持经实际验证后列入矩阵 |
 
-## 3. 当前状态总览（2026-10-10 更新：阶段 0–1 ✅；阶段 2–3 实体建成但仅 ◐（取证项未完成）；阶段 4 ◐ 部分实现）
+## 3. 当前状态总览（2026-10-10 六轮更新：阶段 0–1 ✅；阶段 2–3 实体建成但仅 ◐（取证项未完成）；阶段 4 ◐ 部分实现。多维度体检见 `docs/体检报告-2026-10-10.md`）
 
 ### 3.1 已建成并实测 ✅
 
@@ -103,6 +103,7 @@
 20. **报错必须自证**（2026-10-10 四轮）：非 passed/failed 的结论一律把「为什么」打印出来——blocked 的阶段、原始错误、无法执行的步骤 id 与建议；inconclusive 缺哪一类证据；并给出产物绝对路径。措辞由 protocol 的 `explainResult()` 单点提供，CLI 与 MCP 共用，避免各处口径不一。
 21. **可观测性靠事件流，不靠猜**（2026-10-10 四轮）：内核把每个 Attempt 的耗时写进 `durationMs`（含 barrier 组），并支持 `onEvent` 实时回调；CLI `--verbose` 因此能边跑边打印步骤/观察/重试，结束后给出最慢三步。时间线仍是唯一真相来源（`seq` 排序），实时流只是它的镜像。
 22. **条件步骤：跳过是记录，不是结论**（2026-10-10 五轮，场景/结果升版 1.0 → 1.1）：`steps[].when` 只能引用**已声明观察器**，用与断言同一套词汇判定；条件不成立 ⇒ 该步 `skipped`（不执行、不进 blocked、也不当成功，必须留在时间线与报告里）；条件**无法判定**（观察器 0 行/列缺失/证据核对失败）⇒ 整轮 blocked——在证据不足时替用户选分支等于伪造结论。`when` + `barrier` 同步骤拒绝；`when` 出现在 1.0 文档被校验器与内核**两道**拒绝。升版按 `docs/protocol-reference.md` §6 的模板执行，并重跑全部证据链。
+23. **脱敏导出宁可拒产，不可漏检**（2026-10-10 六轮）：`export --run-id <id> --pack <dir>` 产出可分享的证据包。三层防线：①已知敏感值（场景角色账号/密码、db 绝对路径、运行目录）**逐字**替换，长值优先；②显式模式规则兜底（`_rc` 账号、Windows/POSIX 绝对路径、回环端口、邮箱、API key、Bearer、PEM 私钥）；③写完后**独立反扫**——包内任一文本文件再出现任何原始敏感值即删除整包、exit 70。二进制截图**默认排除**（像素无法用文本规则擦除，不假装脱敏），`--include-images` 显式包含时在 pack.json 标记 `sanitized: false`。规则表与反扫实现在 `packages/reporter/src/sanitize.ts` 单一来源，CLI/MCP/工作台可复用。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -290,7 +291,7 @@ CLI（已有）／工作台／MCP／CI
 
 **P2 — 阶段 4 剩余（P1 完成后再开工）**
 
-- 受控事件注入（模拟邮件/回调）、虚拟时间（仅限显式接入时钟的组件）、macOS 入矩阵、场景/适配器版本兼容自动化验证（旧场景跑新内核）、证据包脱敏检查、安装/升级/迁移/排障文档。
+- 受控事件注入（模拟邮件/回调）、虚拟时间（仅限显式接入时钟的组件）、macOS 入矩阵、场景/适配器版本兼容自动化验证（旧场景跑新内核）、安装/升级/迁移/排障文档。~~证据包脱敏检查~~ —— **已完成（六轮）**：`export --run-id <id> --pack <dir>`，语义见规则 23、证据见 A.11。
 
 **已知基础设施风险（不是业务结论问题，但影响可用性）**
 
@@ -304,7 +305,7 @@ CLI（已有）／工作台／MCP／CI
 
 | # | 判据（可检验） | 现状 | 证据 / 缺口 |
 | --- | --- | --- | --- |
-| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 148/148（2026-10-10 五轮） |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 162/162（2026-10-10 六轮） |
 | 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
 | 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
 | 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
@@ -318,7 +319,8 @@ CLI（已有）／工作台／MCP／CI
 | 12 | CI 在托管 Runner 上真正跑绿（含三入口与矩阵） | ◐ | 工作流已加入步骤，缺 GitHub Runner 的运行号 |
 | 13 | ≥3 个**真实外部项目**试用，记录耗时/发现/误报/复用 | ⬜ | 仓库内只有 2 个自带 fixture；需要外部输入，无法自证 |
 | 14 | macOS 支持经实际验证后入矩阵 | ⬜ | 需要 macOS 机器 |
-| 15 | 受控事件注入（邮件/回调）、虚拟时间、脱敏导出、安装/升级/迁移/排障文档 | ⬜ | 阶段 4 未开工的明确范围 |
+| 15 | 受控事件注入（邮件/回调）、虚拟时间、安装/升级/迁移/排障文档 | ⬜ | 阶段 4 未开工的明确范围 |
+| 20 | 证据包脱敏导出：账号/密钥/内部路径不得残留，导出后独立反扫 | ✅ | `export --run-id <id> --pack <dir>`（规则 23）；单测 14 项 + 真实运行导出实测：12 文件、74 处替换、4 个二进制排除、leak scan clean，包内反扫零残留（A.11） |
 | 16 | 面向使用者的文档：场景编写指南、协议字段速查、适配器开发教程 | ✅ | `docs/scenario-guide.md`、`docs/protocol-reference.md`、`docs/adapter-tutorial.md`（README 有索引） |
 | 17 | 报错具象化：blocked/inconclusive 直接说明原因与建议、给出产物路径 | ✅ | protocol `explainResult()` 单点措辞，CLI 与 MCP 共用；cli 测试断言 blocked 输出含阶段/原因/建议/路径 |
 | 18 | 运行时可观测性：实时步骤流 + 每步耗时 + 最慢步骤 | ✅ | 内核 `Attempt.durationMs` + `onEvent` 流；`run/rerun --verbose` 实测边跑边打印并给出 slowest |
@@ -504,3 +506,18 @@ CLI（已有）／工作台／MCP／CI
 **五轮实测**：`npm run verify` **148/148**；`positive-negative-matrix` **21/21**（新增 check/run 各一条条件步骤用例）；`diagnostic-benchmark` **13/13**（新增条件步骤案例，漏报 0、误报 0）；`tri-entry-consistency` 三入口一致；`blocked-case` PASS；`external-agent-loop` OK。
 
 **诚实边界**：`serial-stability` 未在五轮重跑（上一次 10/10；五轮只改了条件步骤与版本字段，不改既有场景语义，矩阵与基准已覆盖全部 7 个场景的正确实现与故障归因）；`npm run accept` 的一次性完整运行仍未跑完一遍；CI 托管 Runner 运行号、≥3 个外部项目、macOS 仍未取到。
+
+### A.11 2026-10-10 六轮：脱敏证据包导出
+
+**动机**：§8「团队共享场景与**脱敏证据包**」与 §12 完成判据中唯一还能在本机闭环的阶段 4 项。设计立场：**宁可拒产，不可漏检**。
+
+| 交付物 | 内容 |
+| --- | --- |
+| `packages/reporter/src/sanitize.ts` | 显式规则表 `REDACTION_RULES`（`_rc` 账号、Windows/POSIX 绝对路径、回环端口、邮箱、API key、Bearer、PEM 私钥）+ `sanitizeText`（已知敏感值**逐字**替换、长值优先，模式兜底）+ `sanitizeJsonValue`（递归）+ `findLeaks`（独立反扫）；纯函数、单一来源，CLI/MCP/工作台可复用 |
+| `packages/cli/src/pack.ts` | `buildEvidencePack`：收集已知敏感值（场景角色账号/密码、`env.dbPath`、运行目录、runs 根）→ 逐文件脱敏写包 → **独立反扫**（任一残留 ⇒ 删整包 + exit 70）→ 逐文件 sha256 + `pack.json`（redactions/excluded/leakScan/notes） |
+| CLI 入口 | `export --run-id <id> --pack <dir> [--include-images]`；`--pack` 缺 `--run-id` 或 run 不存在 ⇒ exit 64；无 `--pack` 时原「列出历史运行」行为不变 |
+| 二进制边界 | 截图等二进制默认**排除**并在 pack.json 写明原因（像素无法用文本规则擦除）；`--include-images` 显式包含时标记 `sanitized: false`，不冒充已脱敏 |
+
+**六轮实测**：`npm run verify` **162/162**（新增 sanitize 单测 13 项 + CLI pack 端到端 4 项）；真实运行 `rc-mv2cbos9-4b4734d8`（booking-normal）导出：**12 文件、74 处替换**（known-secret×22、loopback-port×43、windows-path×9）、**4 个二进制排除**、`leak scan: clean (checked 8 known secrets)`；对包内全部文本文件做**外部正则反扫**：账号/路径/端口零残留（仅 HTML 标题中的产品名「Reality Check」两处命中，属外部扫描模式过宽的误报，非泄漏）。
+
+**诚实边界**：反扫的敏感值集合 = 已知值 + 规则可识别的模式；**未**做 OCR/图像内容识别（因此二进制默认不打包）；MCP 侧的 `rc_export_pack` 工具尚未暴露（CLI 已可用，列 §11.2）。

@@ -14,6 +14,8 @@ import {
   type CommandResult,
   toCommandResult,
 } from "../config.js";
+import { buildEvidencePack } from "../pack.js";
+import { readCliMeta } from "../runner.js";
 
 export interface ExportedRun {
   runId: string;
@@ -64,13 +66,42 @@ export async function exportCommand(args: string[]): Promise<CommandResult> {
 async function exportCommandImpl(args: string[]): Promise<CommandResult> {
   const parsed = parseArgs(args);
   if (parsed.positionals.length > 0) {
-    throw configError("usage: reality-check export [--format json]");
+    throw configError(
+      "usage: reality-check export [--format json] | export --run-id <id> --pack <dir> [--include-images]",
+    );
   }
+  const config = loadConfig(flagString(parsed, "config"));
+
+  // 脱敏证据包：团队分享用（方案 §8/§12）。与"列出历史运行"是两件事，走同一个
+  // 入口但保持各自语义清晰。
+  const packOut = flagString(parsed, "pack");
+  if (packOut !== undefined) {
+    const runId = flagString(parsed, "run-id");
+    if (runId === undefined) throw configError("export --pack requires --run-id <id>");
+    const includeImages =
+      parsed.flags.get("include-images") === true || parsed.flags.get("include-images") === "true";
+    // 场景里的角色账号是"已知敏感值"的最可靠来源；侧车缺失时退回模式规则。
+    let scenarioPath: string | undefined;
+    try {
+      scenarioPath = (await readCliMeta(config, runId)).scenarioPath;
+    } catch {
+      scenarioPath = undefined;
+    }
+    const pack = await buildEvidencePack({
+      runDir: path.join(config.runsDir, runId),
+      runId,
+      outDir: path.resolve(packOut),
+      extraSecrets: [config.runsDir, path.resolve(config.runsDir)],
+      ...(scenarioPath !== undefined ? { scenarioPath } : {}),
+      ...(includeImages ? { includeImages: true } : {}),
+    });
+    return { code: 0, stdout: pack.lines.join("\n"), stderr: "" };
+  }
+
   const format = flagString(parsed, "format") ?? "text";
   if (format !== "text" && format !== "json") {
     throw configError(`--format must be "text" or "json", got "${format}"`);
   }
-  const config = loadConfig(flagString(parsed, "config"));
   const runs = await listRuns(config.runsDir);
 
   if (format === "json") {

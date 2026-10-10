@@ -42,6 +42,10 @@ node packages/cli/dist/src/main.js rerun --run-id <runId>
 node packages/cli/dist/src/main.js export
 node packages/cli/dist/src/main.js plan "帮我测一下争抢最后一个名额"
 
+# 脱敏证据包：把一次运行的结论与取证链导出成可分享的包（账号/密钥/内部路径被替换，
+# 导出后独立反扫，任何残留都拒绝产出；二进制截图默认排除并写明原因）
+node packages/cli/dist/src/main.js export --run-id <runId> --pack <dir> [--include-images]
+
 # --verbose：实时打印每步结果与耗时，并给出最慢步骤（哪一步慢/卡住一眼看到）
 node packages/cli/dist/src/main.js run scenarios/booking-normal.json --verbose
 ```
@@ -56,6 +60,7 @@ node packages/cli/dist/src/main.js run scenarios/booking-normal.json --verbose
 | [docs/adapter-sdk.md](./docs/adapter-sdk.md) | 适配器作者 | 契约规范与能力声明要求（教程里引用的「规范」） |
 | [Reality-Check-工程阶段方案.md](./Reality-Check-工程阶段方案.md) | 评审者 | 工程路线、不可后补的约束、§12 完成判据、附录 A 实测证据 |
 | [docs/接入耗时记录.md](./docs/接入耗时记录.md) | 接入者 | 第二个独立应用仅凭文档接入的耗时与逐条阻碍 |
+| [docs/体检报告-2026-10-10.md](./docs/体检报告-2026-10-10.md) | 评审者 | 代码/逻辑/功能/需求四维体检：评级、缺陷修复史、工程债、风险清单与建议 |
 
 ## 工作台与 MCP
 
@@ -118,3 +123,4 @@ npm run accept:fast   # 跳过串行稳定性
 - **条件步骤（场景 1.1）**：`steps[].when` 引用**已声明观察器**，用与断言同一套比较词汇判定；条件不成立 ⇒ 该步记 `skipped`（既非失败也非通过，留在时间线与报告里）；条件**无法判定**（证据不足）⇒ 整轮 `blocked`，绝不替用户猜一条分支。1.0 文档不得使用 `when`（校验器与内核两道拒绝）。
 - **协议版本**：场景/结果为 1.1（内核同时接受 1.0 场景，语义不变）；适配器清单必须声明覆盖当前版本，不匹配在运行前拒绝（exit 64）。升版模板见 `docs/protocol-reference.md` §6。
 - **可归因的基础设施失败**：适配器监听浏览器断开、检查页面是否已被关闭，把原因写进 `attempt.detail.error`（而不是抛出一句无从下手的 Playwright 错误）；不做自动恢复——重建上下文会丢登录会话，硬造成功比失败更危险。
+- **脱敏证据包**：`export --run-id <id> --pack <dir>` 产出可分享的运行包——已知敏感值（场景角色账号/密码、db 绝对路径、运行目录）逐字替换 + 显式模式规则（账号名/路径/端口/邮箱/密钥/私钥）兜底；写完**独立反扫**，任何原始敏感值残留都会删掉整包并报错（exit 70）；二进制截图默认排除（像素擦不掉，不假装脱敏），`--include-images` 显式包含时标记 `sanitized: false`。
