@@ -298,15 +298,12 @@ export class LocalWebAdapter {
         detail: { error: err instanceof Error ? err.message : String(err) },
       };
     }
-    await this.captureStepEvidence(step, n).catch((e: unknown) => {
-      // 方案 §4: evidence gaps must be visible. A failed capture is recorded on
-      // the attempt instead of being swallowed. NOTE: step evidence is not (yet)
-      // registered as an EvidenceRef in result.json — only observer evidence is
-      // verified by the kernel — so this detail field is the only durable trace.
-      // See 方案 §11 排队项「步骤证据登记与核对」.
-      const reason = e instanceof Error ? e.message : String(e);
-      attempt.detail = { ...(attempt.detail ?? {}), evidenceError: reason };
-    });
+    // 方案 §4: evidence is captured for EVERY step (including failed ones) and
+    // the refs travel on the attempt so the kernel can verify + register them.
+    const capture = await this.captureStepEvidence(step, n);
+    if (capture.refs.length > 0) attempt.evidence = capture.refs;
+    if (capture.error !== undefined)
+      attempt.detail = { ...(attempt.detail ?? {}), evidenceError: capture.error };
     return attempt;
   }
 
@@ -341,13 +338,12 @@ export class LocalWebAdapter {
     );
     for (let k = 0; k < deferred.length; k++) {
       const d = deferred[k] as { index: number; step: Step; n: number };
-      attempts[d.index] = settled[k] as Attempt;
-      await this.captureStepEvidence(d.step, d.n).catch((e: unknown) => {
-        const reason = e instanceof Error ? e.message : String(e);
-        const target = attempts[d.index];
-        if (target !== undefined)
-          target.detail = { ...(target.detail ?? {}), evidenceError: reason };
-      });
+      const target = settled[k] as Attempt;
+      attempts[d.index] = target;
+      const capture = await this.captureStepEvidence(d.step, d.n);
+      if (capture.refs.length > 0) target.evidence = capture.refs;
+      if (capture.error !== undefined)
+        target.detail = { ...(target.detail ?? {}), evidenceError: capture.error };
     }
     return attempts;
   }
@@ -589,14 +585,51 @@ export class LocalWebAdapter {
   }
 
   /** Per-step evidence: screenshot + DOM snapshot land on disk immediately. */
-  private async captureStepEvidence(step: Step, n: number): Promise<void> {
+  /** Capture the step's screenshot + DOM snapshot and return their refs.
+   *
+   * Never throws: a partially captured step keeps the refs of the files that
+   * DID land (evidence of a half-failed step is still evidence), and the
+   * failure is reported back as `error` so the kernel can surface it instead of
+   * silently weakening the completeness guarantee (方案 §4 铁律 3).
+   * Returns empty refs when the actor has no page yet (nothing to look at). */
+  private async captureStepEvidence(
+    step: Step,
+    n: number,
+  ): Promise<{ refs: EvidenceRef[]; error?: string }> {
     const entry = this.pages.get(step.actor);
-    if (!entry || !this.runDir) return;
-    const evidenceDir = path.join(this.runDir, "evidence");
-    await fsp.mkdir(evidenceDir, { recursive: true });
+    const runDir = this.runDir;
+    if (!entry || !runDir) return { refs: [] };
+    const evidenceDir = path.join(runDir, "evidence");
     const stem = path.join(evidenceDir, `step-${n}-${step.actor}`);
-    await entry.page.screenshot({ path: `${stem}.png`, fullPage: true });
-    await fsp.writeFile(`${stem}.dom.html`, await entry.page.content(), "utf8");
+    const refs: EvidenceRef[] = [];
+    const errors: string[] = [];
+    const register = async (kind: EvidenceKind, file: string): Promise<void> => {
+      const ref: EvidenceRef = {
+        kind,
+        file: toRel(runDir, file),
+        seq: ++this.evidenceSeq,
+        actor: step.actor,
+        sha256: await sha256File(file),
+      };
+      refs.push(ref);
+    };
+    try {
+      await fsp.mkdir(evidenceDir, { recursive: true });
+      const png = `${stem}.png`;
+      await entry.page.screenshot({ path: png, fullPage: true });
+      await register("screenshot", png);
+    } catch (e) {
+      errors.push(`screenshot: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    try {
+      await fsp.mkdir(evidenceDir, { recursive: true });
+      const dom = `${stem}.dom.html`;
+      await fsp.writeFile(dom, await entry.page.content(), "utf8");
+      await register("dom-snapshot", dom);
+    } catch (e) {
+      errors.push(`dom-snapshot: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return errors.length > 0 ? { refs, error: errors.join("; ") } : { refs };
   }
 }
 

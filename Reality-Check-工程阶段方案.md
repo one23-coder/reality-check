@@ -64,10 +64,11 @@
 | 取消候补递补 | 退出码 0，5/5 断言通过 | — | 退出码 1，✗ cancel-releases-slot、✗ waitlist-declared-order（3 断言失败） | 退出码 1，✗ waitlist-declared-order（4 断言通过不受牵连） |
 
 - **CLI 五命令**：`check`（结构校验+能力检查，六场景全过）、`run`、`rerun --run-id`（同种子重建环境重跑，实测正确版本重跑仍通过）、`export`（列出历史运行及复跑命令）、`plan`（受限规划器；无线索且无可用模型时不选任何场景，空场景目录为配置错误）。
-- **测试**：**121 项全过（2026-10-10 `npm run verify` 实测，基线为 103 项中 99 通过 / 4 失败）**。本轮新增的测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合的校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」与「证据采集失败必须留痕」两项。原「91 项」与「103 项」计数均已过时。
+- **测试**：**124 项全过（2026-10-10 二轮 `npm run verify` 实测；首轮基线为 103 项中 99 通过 / 4 失败）**。新增测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、角色声明传递、步骤证据登记与剔除、数据根台账与兜底清理、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合 + `Attempt.evidence` 校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」「证据采集失败必须留痕」「每个步骤交回可核对证据引用」三项。
 - **退出码契约实测**：0（通过）、1（业务违规）、2（证据不完整降级）、3（blocked，`scripts/blocked-case.mjs` PASS）、64（配置非法，含 BOM JSON 被拒、空场景目录的 `plan`）、70（工具自身异常）。
 - **正反例配对矩阵已脚本化（2026-10-10）**：`scripts/positive-negative-matrix.mjs` 一条命令跑完 19 个用例（6 场景 `check` + booking/exam 正确实现 + 四个故障开关 + `rerun`），实测 19/19 退出码与归因规则一致，见附录 A.6。
-- **本轮新增的三条内核级保证（2026-10-10）**：内核逐条核对适配器交回的证据引用（存在性 + 哈希 + 路径、失败即降级 inconclusive 并具名 `evidence-file`）；场景观察器 SQL 与适配器清单 SQL 必须同源（单一口径，仅空白差异被容忍）；适配器拒绝使用不属于本次运行的 db 文件（见 §3.3 规则 11–13）。
+- **内核级保证（2026-10-10 两轮累计）**：内核逐条核对适配器交回的证据引用（存在性 + 哈希 + 路径），观察器证据失败即降级 inconclusive 并具名 `evidence-file`，步骤证据失败即剔除并具名；场景观察器 SQL 与适配器清单 SQL 必须同源（单一口径，仅空白差异被容忍）；适配器拒绝使用不属于本次运行的 db 文件；内核在启动前认领数据根并把应用库登记进台账；场景声明的 `seedRole` 由内核交给 `setupEnv` 真实兑现（见 §3.3 规则 11–16）。
+- **三入口一致性（2026-10-10 二轮）**：`scripts/tri-entry-consistency.mjs` 以真实进程分别经 CLI / 工作台 HTTP / MCP stdio 跑同一场景，逐字段比对三份 `result.json`（排除 runId、时间戳、端口、绝对路径），实测一致。
 
 ### 3.2 阶段 1 收尾任务 ✅ 已全部完成（证据见附录 A.2）
 
@@ -86,7 +87,7 @@
 4. **证据完整性按「要求的类型逐项」核对**，不按数量：少采一类多采一类时按数量算会误判为完整。
 5. **表单提交用原生 POST + 绝对 URL**：相对 action 会被解析到页面路径前缀下变成 404；`fetch + preventDefault` 会让「点击完成」早于「服务端处理完成」，采样读到旧值——测试自己的时序问题会伪装成业务缺陷。
 6. **点击未触发导航必须如实报失败**，不能静默成功让断言背锅。
-7. **场景角色必须先注册为应用账号**；是否**占用**初始名额由 `attributes.seedRole: "holder"` 显式声明——把所有角色默认当持有者会让「要新报名的人」被拒，正确实现反被误报（我们实测踩过）。
+7. **场景角色必须先注册为应用账号**；是否**占用**初始名额由 `seedRole: "holder"` 显式声明——把所有角色默认当持有者会让「要新报名的人」被拒，正确实现反被误报（我们实测踩过）。**声明的兑现必须发生在应用启动前**：内核把场景角色交给 `setupEnv`（`registerAccounts` 之后再建账号已无法追溯占位）。此条在 2026-10-10 之前只是文档约定、内核并未传参，场景只能用显式报名步骤代替；现已在第二轮落地，6 个场景同步改为声明式。
 8. **所有权台账拒绝重复登记**：同一资源登记两次直接中断，掩盖所有权错误的代码不允许跑。
 9. **规划器没有类别线索时返回 `needsModel` 而不是猜默认场景**；模型不可用/超时/预算耗尽/返回未知场景 id 一律回退到已保存场景，不向上抛异常。
 10. **端到端测试并行时必须分配独立端口**：共用端口会让一个测试的浏览器打到另一个测试的应用上，结论变成噪声。
@@ -94,6 +95,8 @@
 12. **场景观察器 SQL 与适配器清单 SQL 必须同源，由内核在校验阶段比对**（§3.3 规则 2 早已声明，「单一口径」的内核校验在 2026-10-10 才真正落地）：只容忍空白差异，任何实质差异（列、表、WHERE）都是配置错误（exit 64），且拒绝发生在创建运行目录之前。归一化必须按空白 `\s+` 处理——写错字符类会让检查静默失效（本轮真实踩过，见附录 A.6）。
 13. **适配器拒绝使用不属于本次运行的 db 文件**（2026-10-10 补）：目标路径已存在 db 文件即拒绝启动，内核转成 blocked（exit 3），绝不静默复用残留数据。缺少这一步时，`claimDataRoot` 的 §10 数据隔离在此路径上无人执行（见附录 A.5 限制 5）。
 14. **`missingEvidenceTypes` 是封闭集合，不是 `string[]`**（2026-10-10 补）：证据缺口必须能归因到具体类型，结果校验器拒收无法归类的字符串，防止用占位值糊过校验。
+15. **步骤证据与观察器证据走同一道核对闸门**（2026-10-10 二轮）：`Attempt.evidence` 由适配器采集并落盘，内核逐条核对（在本次运行的 `evidence/` 内、非空、sha256 一致）后才写进 `result.json`；核对失败的引用被剔除并在时间线具名。步骤证据**不是断言主体**——它证明「这一步真的发生过」，不改变判定。
+16. **内核在启动应用之前认领数据根**（2026-10-10 二轮）：`claimDataRoot(runDir/data, runId)` 写 `ownership.json`；已有内容而无所有权标记 → blocked（exit 3，绝不冒充业务结论）。适配器在 `EnvSummary.dbPath` 报告的应用库会被登记进台账，`teardown` 后由台账做第二道清理兜底。此前 `claimDataRoot` 只被单测调用，产品路径无人执行。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -108,7 +111,7 @@
 
 - 跑全仓测试（当前 91 项）与全量类型检查。
 - 用 3.1 节的正反例矩阵复核：正确版本全过、每个故障版本被归因到**对应的**规则。
-- 抽查运行目录：`ownership.json` 资源数与 `env.torn-down` 事件数一致；`evidence/` 内文件与 `result.json` 引用一一对应。
+- 抽查运行目录：`data/ownership.json` 是本次运行对数据根的台账（`runId`/`dataRoot`/`entries`）；`torn-down` 事件同时记录适配器清理的路径与台账 `{entries, removed}`（`entries` = 本运行登记的资源数，`removed` = 台账实际兜底删掉的路径，适配器已清理则为空）；`evidence/` 内文件与 `result.json` 的 `evidence[]`/`attempts[].evidence[]` 引用一一对应。
 
 ### 验收合格判定（全部已达成 ✅）
 
@@ -264,14 +267,19 @@ CLI（已有）／工作台／MCP／CI
 
 ### 11.2 下一步排队（顺序即优先级；数据隔离、正反例配对、第二项目接入、复跑能力永不裁剪）
 
-**P1 — 补齐已声明但无取证的验收项（在此完成前不开新功能）**
+**已完成（2026-10-10 二轮收口，证据见 A.7）**
 
-1. **三入口一致性**：同一场景经 CLI / 工作台 / MCP 运行，用差异脚本逐字段比对 `result.json`；让 CI 在托管 Runner 上真正跑绿一轮并记录运行号。
-2. **步骤证据登记与核对**：`Attempt` 增加证据引用，内核用同一套 `verifyEvidenceRef` 核对——目前只有观察器证据被登记（A.5 限制 4）。
-3. **把 `claimDataRoot` 接进 `run`/`rerun` 产品路径**：§10「已有内容但无所有权标记的数据根目录拒绝运行」现在只在 core 测试里被执行（A.5 限制 5）。
-4. **≥3 个不同项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况。
-5. **预先标注的正常/故障案例集评估**，公开案例范围与误报样本，不用自评代替。
-6. **未参与开发的编程助手闭环**：仅靠 MCP/CLI 公开接口完成「读取失败 → 修改应用 → 复验」。
+- **三入口一致性**：`scripts/tri-entry-consistency.mjs`（CLI / 工作台 / MCP 各自真实进程，逐字段比对 `result.json`）实测一致；CI 已加入该步骤与矩阵步骤（托管 Runner 的运行号仍待补）。
+- **步骤证据登记与核对**：`Attempt.evidence` 与观察器证据走同一道核对闸门 —— A.5 限制 4 关闭。
+- **`claimDataRoot` 接进产品路径**：内核启动前认领数据根、登记应用库、`teardown` 由台账兜底 —— A.5 限制 5 关闭。
+- **规则 7 落地**：内核向 `setupEnv` 传角色声明，6 个场景改为声明式占位 —— A.5 限制 1 关闭。
+
+**P1 — 剩余取证项（在此完成前不开新功能）**
+
+1. **CI 托管 Runner 实跑绿的记录**：把 `npm test` / 三入口 / 矩阵的运行号写进附录 A。
+2. **≥3 个不同项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况。
+3. **预先标注的正常/故障案例集评估**，公开案例范围与误报样本，不用自评代替。
+4. **未参与开发的编程助手闭环**：仅靠 MCP/CLI 公开接口完成「读取失败 → 修改应用 → 复验」。
 
 **P2 — 阶段 4 剩余（P1 完成后再开工）**
 
@@ -317,11 +325,11 @@ CLI（已有）／工作台／MCP／CI
 
 ### A.5 已知限制（如实记录，非完成暗示）
 
-1. 内核未向 setupEnv 传递 seedRole 种子（registerAccounts 走 JSON POST 与纯表单 fixture 不匹配）：角色"占用初始名额"的语义由场景**显式报名步骤**实现（方案 §3.3 规则 7 的完整内核实现为后续改进项）。
+1. ~~内核未向 setupEnv 传递 seedRole 种子；角色"占用初始名额"只能由场景**显式报名步骤**代替（规则 7 的完整内核实现列为改进项）。~~ **已于 2026-10-10 二轮修复**：内核把场景角色传给 `setupEnv`，6 个场景改为声明式（见 A.7）。
 2. cancel-keeps-slot(-seat) 故障在本 fixture 中为"取消完全无操作"，取消前后的可观察状态差仅剩候补队列不变，故含一个 inconclusive 断言，整体降级为退出码 2（方案 §10 允许的降级语义，违规均已归因）。
 3. macOS 支持未验证（方案 §2 表格约定：经实际验证后列入矩阵）。
-4. **步骤证据未登记、不参与核对**（2026-10-10 记录）：适配器把每步截图与 DOM 快照写进 `evidence/`，但 `Attempt` 没有证据字段，内核只登记观察器证据，因此 `result.json.evidence` 里只有 `sql-dump`；采集失败的步骤现在会在 `attempt.detail.evidenceError` 留痕，但**不会**使判定降级。§10「内核登记时核对文件存在」目前只覆盖观察器证据。修复方向见 §11.2 第 2 项。
-5. **`claimDataRoot` 未接入产品路径**（2026-10-10 发现）：§10「已有内容但无所有权标记的数据根目录拒绝运行」的实现只被 core 单测调用，`run`/`rerun` 从未调用它；产品路径上目前唯一的所有权防护是适配器拒绝已存在的 db 文件（§3.3 规则 13）。修复方向见 §11.2 第 3 项。
+4. ~~步骤证据未登记、不参与核对（适配器把每步截图与 DOM 快照写进 `evidence/`，但 `Attempt` 没有证据字段……§10「内核登记时核对文件存在」只覆盖观察器证据）。~~ **已于 2026-10-10 二轮修复**：`Attempt.evidence` 走同一道核对闸门（见 A.7）。边界仍在：步骤证据不是断言主体，其缺失不改变判定。
+5. ~~`claimDataRoot` 未接入产品路径（§10「已有内容但无所有权标记的数据根目录拒绝运行」只被 core 单测调用）。~~ **已于 2026-10-10 二轮修复**：内核启动前认领数据根、登记应用库、`teardown` 台账兜底（见 A.7）。
 6. 旧文档口径修正：`docs/接入耗时记录.md` 记录的 `exam-cancel-waitlist --fault cancel-keeps-seat` 退出码为 1，2026-10-10 实测为 2（与 A.1/A.6 一致）——该文档已追加更正说明。
 
 ### A.6 2026-10-10 收口轮：改动、缺陷与实测证据
@@ -372,3 +380,27 @@ CLI（已有）／工作台／MCP／CI
 | `rerun --run-id rc-mv26fipv-5e0a6502` | 新 `rc-mv26jkx6-41aa4159`，`previous=passed now=passed`，exit 0 |
 
 **诚实边界**：本轮**未**做任何阶段 2/3/4 的取证补齐，也未实现 §11.2 的排队项；因此阶段 2/3 的状态由 ✅ 回退为 ◐，阶段 4 维持 ◐。功能「已写好」不等于「已验收」。
+
+### A.7 2026-10-10 二轮：三处「声明了但没兑现」的修复
+
+**动机**：一轮收口后仍有三处**代码与自身规则不一致**的地方（都属于「文档写了、代码没做」，是最危险的一类不一致）。二轮把它们全部兑现，并重跑全部端到端证据。
+
+| # | 症状（二轮前） | 修复 | 证据 |
+| --- | --- | --- | --- |
+| 1 | `seedRole` 是协议必填字段，但**内核从不把它交给适配器**：`setupEnv` 签名里没有 `roles`，产品路径上 `RC_SEED` 永远是空的，`"holder"` 声明静默无效；6 个场景只能用显式报名步骤代替占位（且场景描述里明写了这个妥协） | 内核向 `setupEnv` 传 `scenario.roles`；`LocalWebAdapterV1` 契约、SDK 一致性套件、`docs/adapter-sdk.md` 同步；6 个场景删除 holder 自报名步骤、描述改为声明式（step 数 8→4 / 12→8 等） | `engine-evidence.test.ts` 断言内核交付 `alice:none / hold_rc:holder / queued_rc:waitlisted`；矩阵 19/19 与之前完全一致（说明语义等价），`workbench` 场景步骤数断言同步更新 |
+| 2 | 每步截图/DOM 快照**写盘但从不登记**：`Attempt` 没有证据字段，`result.json.evidence` 里只有 observer 的 `sql-dump`，§10「内核登记时核对文件存在」只覆盖一半证据 | `Attempt.evidence?: EvidenceRef[]`（协议 1.0，validator 同步）；适配器 `captureStepEvidence` 返回引用（**不再抛错**：部分成功也保留已落盘的引用，失败经 `evidenceError` 上报）；内核用同一道 `verifyEvidenceRef` 闸门核对、剔除无效引用并具名；`step` 事件带 `evidence: N` | 真实运行 `rc-mv27i08g-d3b32773`（booking-normal）：`evidence[]` 10 条 = 4 步 ×2（screenshot+dom-snapshot）+ 2 个 observer `sql-dump`；`engine-evidence.test.ts` 覆盖「有效引用登记 + 幽灵引用剔除并具名」 |
+| 3 | `claimDataRoot`（§10「已有内容但无所有权标记的数据根拒绝运行」）**只被单测调用**：产品路径上没人认领数据根，也没有 `ownership.json` | 内核在启动应用前 `claimDataRoot(dataRoot, runId)`（失败 → blocked/exit 3），把 `EnvSummary.dbPath` 登记进台账，`teardown` 后由台账兜底清理；`OwnershipRegistry.teardown` 只上报**实际删除**的路径，`torn-down` 事件带 `ownership:{entries,removed}` | `rc-mv27i08g-d3b32773`：`data/ownership.json`（runId/dataRoot/entries=[]）、`data/` 内只剩台账文件（app.db 已被清理）；`engine-evidence.test.ts` 断言 entries=1、removed=[db] |
+
+**二轮实测（Windows 本机，命令与退出码）**：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm run verify` | **124/124 通过**（typecheck + build + test，0 失败） |
+| `node scripts/positive-negative-matrix.mjs` | **19/19 一致，0 偏差**：booking-normal `rc-mv27jya8-30f551e1` →0；booking-contend+overbooking `rc-mv27klku-34c84332` →1；booking-cancel-waitlist+cancel-keeps-slot `rc-mv27ku5m-6dc59af9` →2；+waitlist-order-wrong `rc-mv27l50a-acc41805` →1；exam-contend+overbooking `rc-mv27m5cf-e2e6a80c` →1；exam-cancel-waitlist+cancel-keeps-seat `rc-mv27mdz3-ac155077` →2；+waitlist-order-wrong `rc-mv27moeg-414a2f46` →1 |
+| `node scripts/tri-entry-consistency.mjs`（新增） | **三入口一致**：CLI `rc-mv27jca6-eb66caed` / 工作台 `rc-mv27jhln-cf31695a` / MCP `rc-mv27jm6c-d2dec421`，verdict 全是 passed，`evidence` 10 条、`attempts` 4 条，逐字段比对无差异 |
+| `node scripts/blocked-case.mjs` | PASS：exit 3、blocked、全部规则 not-evaluated |
+| `node scripts/serial-stability.mjs` | 10 次 exit codes = [0]，10/10 一致 |
+
+**二轮同时修正的文档不一致**：`scenarios/exam-cancel-waitlist.json` 的 `description` 仍写着「协议 1.0 无字符串断言」的旧局限，而同文件的断言早已使用 `reservation-holder` + `eqStr`（`dcb8c31` 引入时漏改描述）——已改写为与断言一致。
+
+**边界（仍算限制）**：步骤证据只证明「这一步真的发生过」，**不参与判定**（断言主体只走观察器证据）；缺失步骤证据不会把通过降级。这是刻意的分工，不是漏洞。

@@ -62,6 +62,9 @@ node -e "import('@rc/adapter-sdk').then(async m => console.log(await m.runConfor
 # 正反例配对矩阵：6 场景 check + 两应用正确实现 + 四个故障开关 + rerun（判据 = 退出码 + 归因规则）
 node scripts/positive-negative-matrix.mjs
 
+# 三入口一致性：CLI / 工作台 HTTP / MCP stdio 跑同一场景，逐字段比对 result.json
+node scripts/tri-entry-consistency.mjs
+
 # 环境缺失路径（退出码 3）与串行 10 次稳定性
 node scripts/blocked-case.mjs
 node scripts/serial-stability.mjs
@@ -82,7 +85,8 @@ node scripts/serial-stability.mjs
 
 - **数据隔离**：只初始化/重置工具创建并记录所有权的资源；已有内容但无所有权标记的数据根目录拒绝运行。
 - **业务真相**：断言主体只走场景声明的观察器 SQL；观察器每次读取新建连接（WAL 可见性靠独立连接，不靠只读标志）。
-- **证据**：适配器采集即落盘，内核**逐条核对**它接受的证据引用（在本次运行的 `evidence/` 内、非空、sha256 与登记值一致）；核对失败的引用被剔除，引用它的断言降级为 inconclusive 并具名 `evidence-file`。缺失证据类型是封闭集合，校验器拒收无法归类的字符串。（步骤截图/DOM 快照尚未登记进 `result.json.evidence`，见方案 A.5 限制 4。）
+- **证据**：适配器采集即落盘，内核**逐条核对**它接受的证据引用（在本次运行的 `evidence/` 内、非空、sha256 与登记值一致）——**观察器证据与每步截图/DOM 快照走同一道闸门**（`attempts[].evidence`）。核对失败的引用被剔除并具名；观察器证据失败会把引用它的断言降级为 inconclusive（`evidence-file`），步骤证据不是断言主体、只作「这一步真的发生过」的凭据。缺失证据类型是封闭集合，校验器拒收无法归类的字符串。
 - **单一口径**：场景 observer 的 SQL 必须与适配器清单 SQL 一致（仅容忍空白差异），差异即配置错误（exit 64），拒绝发生在创建运行目录之前。
-- **所有权**：拒绝使用不属于本次运行的 db 文件（已存在即拒绝启动，转 blocked）；只清理台账内 `ownedBy === runId` 的资源。
+- **所有权**：内核在启动应用前认领数据根（`data/ownership.json`）；已有内容而无所有权标记 → blocked；应用库（`EnvSummary.dbPath`）登记进台账，`teardown` 由台账兜底清理，只清理 `ownedBy === runId` 的资源；适配器另拒绝已存在的 db 文件。
+- **角色声明**：场景角色的 `seedRole`（`holder` 占用初始名额）由内核在启动时交给适配器兑现——`registerAccounts` 之后无法追溯占位（规则 7）。
 - **模型边界**：无类别线索返回 `needsModel`；模型不可用/超时/预算耗尽/未知场景一律回退已保存场景。**没有类别线索且无可用模型时不选任何场景**（不猜默认），`plan` 在此情形下退出码 0 并如实打印，而空场景目录是配置错误（exit 64）；全程不执行自由生成的脚本。

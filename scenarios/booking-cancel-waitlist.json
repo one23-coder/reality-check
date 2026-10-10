@@ -4,7 +4,7 @@
   },
   "id": "booking-cancel-waitlist",
   "name": "取消候补递补",
-  "description": "两个 holder 依次显式报名占满名额（规则7：占用意图由 seedRole 声明 + 显式报名步骤保证），bob、carol 相继报名时课程已满、按序进入候补队列（bob 位1、carol 位2），随后 holder 取消报名。正确实现按队列声明顺序递补队首 bob_rc；waitlist-order-wrong 递补队尾 carol_rc、cancel-keeps-slot 不递补，均由 booking-holder 的 eqStr 断言检出。",
+  "description": "两个 holder 以 seedRole:\"holder\" 声明占用全部名额（内核在启动环境时把角色声明交给适配器落库，规则 7），bob、carol 相继报名时课程已满、按序进入候补队列（bob 位1、carol 位2），随后 holder 取消报名。正确实现按队列声明顺序递补队首 bob_rc；waitlist-order-wrong 递补队尾 carol_rc、cancel-keeps-slot 不递补，均由 booking-holder 的 eqStr 断言检出。",
   "app": "booking-app",
   "seed": 13,
   "roles": [
@@ -42,68 +42,6 @@
     }
   ],
   "steps": [
-    {
-      "id": "holder-register",
-      "actor": "holder",
-      "op": "register",
-      "params": {
-        "username": "holder_rc",
-        "password": "pw-holder"
-      }
-    },
-    {
-      "id": "holder-login",
-      "actor": "holder",
-      "op": "login",
-      "params": {
-        "username": "holder_rc",
-        "password": "pw-holder"
-      }
-    },
-    {
-      "id": "holder-nav-book",
-      "actor": "holder",
-      "op": "navigate",
-      "params": {
-        "path": "/book?course=course-1"
-      }
-    },
-    {
-      "id": "holder-submit-booking",
-      "actor": "holder",
-      "op": "submit"
-    },
-    {
-      "id": "holder2-register",
-      "actor": "holder2",
-      "op": "register",
-      "params": {
-        "username": "holder2_rc",
-        "password": "pw-holder2"
-      }
-    },
-    {
-      "id": "holder2-login",
-      "actor": "holder2",
-      "op": "login",
-      "params": {
-        "username": "holder2_rc",
-        "password": "pw-holder2"
-      }
-    },
-    {
-      "id": "holder2-nav-book",
-      "actor": "holder2",
-      "op": "navigate",
-      "params": {
-        "path": "/book?course=course-1"
-      }
-    },
-    {
-      "id": "holder2-submit-booking",
-      "actor": "holder2",
-      "op": "submit"
-    },
     {
       "id": "bob-register",
       "actor": "bob",
@@ -165,6 +103,15 @@
       "id": "carol-submit-booking",
       "actor": "carol",
       "op": "submit"
+    },
+    {
+      "id": "holder-login",
+      "actor": "holder",
+      "op": "login",
+      "params": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      }
     },
     {
       "id": "holder-nav-cancel",

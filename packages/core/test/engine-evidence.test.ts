@@ -9,7 +9,8 @@
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -85,13 +86,22 @@ function rowsReading(rows: Record<string, unknown>[], evidence: EvidenceRef[]): 
 
 class FakeAdapter implements LocalWebAdapterV1 {
   runDir = "";
+  dataRoot = "";
   teardowns = 0;
+  /** username:seedRole for every role the kernel handed to setupEnv (规则 7). */
+  seedRoles: string[] = [];
+  /** "step-evidence": every step returns one verifiable ref + one ghost ref.
+   * "db": setupEnv creates a db file under the data root (ownership ledger). */
+  readonly behaviour: Set<string>;
   constructor(
     /** Build the observation AFTER the run dir exists (like a real adapter). */
     private readonly read: (runDir: string) => Promise<ObserverReading>,
     private readonly failSetup = false,
     private readonly observers: AdapterManifest["observers"] = OBSERVERS,
-  ) {}
+    behaviour: readonly string[] = [],
+  ) {
+    this.behaviour = new Set(behaviour);
+  }
 
   manifest(): AdapterManifest {
     return {
@@ -107,28 +117,50 @@ class FakeAdapter implements LocalWebAdapterV1 {
       observers: this.observers,
     };
   }
-  async setupEnv(opts: { runDir: string; seed: number; dataRoot: string }): Promise<EnvSummary> {
+  async setupEnv(opts: {
+    runDir: string;
+    seed: number;
+    dataRoot: string;
+    roles: Scenario["roles"];
+  }): Promise<EnvSummary> {
     if (this.failSetup) throw new Error("fake environment refused to start (方案 §10)");
+    this.seedRoles = opts.roles.map((r) => `${r.account.username}:${r.seedRole}`);
     this.runDir = opts.runDir;
-    return {
+    this.dataRoot = opts.dataRoot;
+    const summary: EnvSummary = {
       appVersion: "0.0.1",
       adapterVersion: "0.0.1",
       baseUrl: "http://127.0.0.1:0",
       seed: opts.seed,
       platform: "test",
     };
+    if (this.behaviour.has("db")) {
+      // A real app creates its DB under the data root we were handed.
+      const dbPath = join(opts.dataRoot, "app.db");
+      await mkdir(opts.dataRoot, { recursive: true });
+      await writeFile(dbPath, "fake app db", "utf8");
+      summary.dbPath = dbPath;
+    }
+    return summary;
   }
   async registerAccounts(): Promise<void> {}
-  async runStep(step: Scenario["steps"][number], _ctx: StepContext): Promise<Attempt> {
-    return { stepId: step.id, actor: step.actor, op: step.op, outcome: "completed" };
+  async runStep(step: Scenario["steps"][number], ctx: StepContext): Promise<Attempt> {
+    const attempt: Attempt = {
+      stepId: step.id,
+      actor: step.actor,
+      op: step.op,
+      outcome: "completed",
+    };
+    if (this.behaviour.has("step-evidence")) {
+      // one ref whose bytes are really on disk + one ref that was never written
+      attempt.evidence = [await writeEvidence(ctx.runDir, `step-${step.id}.json`, step.id), ghostRef()];
+    }
+    return attempt;
   }
-  async runBarrier(steps: Scenario["steps"], _ctx: StepContext): Promise<Attempt[]> {
-    return steps.map((s) => ({
-      stepId: s.id,
-      actor: s.actor,
-      op: s.op,
-      outcome: "completed" as const,
-    }));
+  async runBarrier(steps: Scenario["steps"], ctx: StepContext): Promise<Attempt[]> {
+    const out: Attempt[] = [];
+    for (const s of steps) out.push(await this.runStep(s, ctx));
+    return out;
   }
   async observe(_observerId: string): Promise<ObserverReading> {
     return this.read(this.runDir);
@@ -141,6 +173,27 @@ class FakeAdapter implements LocalWebAdapterV1 {
     return [];
   }
 }
+
+describe("角色声明传递 (方案 §3.3 规则 7)", () => {
+  it("hands every declared role (with its seedRole) to setupEnv, not just to registerAccounts", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []));
+    await executeScenario(
+      scenario({
+        roles: [
+          { id: "alice", account: { username: "alice", password: "pw-alice" }, seedRole: "none" },
+          { id: "hold", account: { username: "hold_rc", password: "pw-hold" }, seedRole: "holder" },
+          { id: "queued", account: { username: "queued_rc", password: "pw-q" }, seedRole: "waitlisted" },
+        ],
+      }),
+      adapter,
+      { runsRoot },
+    );
+    // A seeding adapter must see 占用意图 while the app starts — an account
+    // created later cannot retroactively occupy an initial slot.
+    assert.deepEqual(adapter.seedRoles, ["alice:none", "hold_rc:holder", "queued_rc:waitlisted"]);
+  });
+});
 
 describe("单一口径 SQL 校验 (方案 §3.3 规则 2)", () => {
   it("accepts a scenario SQL differing from the manifest only in whitespace", async () => {
@@ -276,5 +329,70 @@ describe("证据引用核对 (方案 §4 铁律 3 + §10 降级)", () => {
     assert.equal(result.verdict, "blocked");
     assert.equal(result.ruleEvaluations[0]?.verdict, "not-evaluated");
     assert.equal(adapter.teardowns, 1, "teardown must run even for a blocked run");
+  });
+});
+
+describe("步骤证据的登记与核对 (方案 §10 证据)", () => {
+  it("registers verifiable step evidence, drops the unverifiable ref and names it", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(
+      async () => rowsReading([{ n: 2 }], []),
+      false,
+      OBSERVERS,
+      ["step-evidence"],
+    );
+    const result = await executeScenario(scenario(), adapter, { runsRoot });
+
+    // The real file is registered; the ghost ref never reaches the result.
+    assert.deepEqual(
+      result.evidence.map((e) => e.file),
+      ["evidence/step-s1.json"],
+    );
+    const attempt = result.attempts[0];
+    assert.equal(attempt?.evidence?.length, 1, "the attempt keeps only verifiable refs");
+    assert.equal(attempt?.evidence?.[0]?.file, "evidence/step-s1.json");
+
+    const invalid = result.timeline.find(
+      (e) => e.kind === "evidence-invalid" && e.detail["stepId"] === "s1",
+    );
+    assert.ok(invalid, "the dropped step ref must be named in the timeline");
+    assert.match(String(invalid.detail["reason"]), /does not exist/);
+
+    // Step evidence is not an assertion subject: the verdict still comes from
+    // the observer evidence only.
+    assert.equal(result.verdict, "passed");
+    const step = result.timeline.find((e) => e.kind === "step");
+    assert.equal((step?.detail["evidence"] as number | undefined), 1);
+  });
+});
+
+describe("数据根所有权台账 (方案 §10 数据隔离)", () => {
+  it("claims the data root, registers the app's db and removes it from the ledger", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, ["db"]);
+    const result = await executeScenario(scenario(), adapter, { runsRoot });
+
+    const dataRoot = join(runsRoot, result.runId, "data");
+    // The ledger exists for THIS run and is the only owner of the root…
+    const ledger = JSON.parse(await readFile(join(dataRoot, "ownership.json"), "utf8")) as {
+      runId: string;
+      dataRoot: string;
+      entries: unknown[];
+    };
+    assert.equal(ledger.runId, result.runId);
+    assert.equal(ledger.dataRoot, dataRoot);
+    assert.deepEqual(ledger.entries, [], "every owned resource was torn down");
+
+    // …and the app's db was actually removed by one of the two cleanup layers.
+    assert.equal(existsSync(join(dataRoot, "app.db")), false);
+
+    const tornDown = result.timeline.find((e) => e.kind === "torn-down");
+    assert.ok(tornDown, "a torn-down event must be recorded");
+    const ownership = tornDown.detail["ownership"] as { entries: number; removed: string[] };
+    assert.equal(ownership.entries, 1);
+    assert.deepEqual(
+      ownership.removed.map((p) => p.replace(/\\/g, "/")),
+      [`${dataRoot.replace(/\\/g, "/")}/app.db`],
+    );
   });
 });

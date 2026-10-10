@@ -29,7 +29,12 @@ import type { LocalWebAdapterV1, ObserverReading, StepContext } from "./adapter.
 import { evaluateAssertion, rollUpVerdict } from "./assert.js";
 import { RunArtifacts } from "./artifacts.js";
 import { configError, internalError } from "./errors.js";
-import { newRunId } from "./ownership.js";
+import {
+  claimDataRoot,
+  insideRoot,
+  newRunId,
+  type OwnershipRegistry,
+} from "./ownership.js";
 
 /** SQL whitespace normalization for the 单一口径 comparison: runs of
  * whitespace (including newlines) collapse to one space, so a scenario may
@@ -195,18 +200,44 @@ export async function executeScenario(
     return attempt;
   };
 
+  /** Data root this run owns (方案 §10): claimed before the environment starts,
+   * registered with every resource the app creates under it, torn down in the
+   * finally block below. */
+  const dataRoot = join(artifacts.dir, "data");
+  let registry: OwnershipRegistry | undefined;
+
   const run = async (): Promise<RunResult> => {
     // (d) Environment. Any failure here is "blocked", never an exception.
     let env: EnvSummary;
     try {
+      // 数据隔离铁律 (§10): the kernel CLAIMS the data root before anything
+      // runs. A root that already holds content without this run's ownership
+      // marker is refused — reusing someone else's data must never look like a
+      // business result.
+      registry = await claimDataRoot(dataRoot, runId);
+    } catch (e) {
+      await artifacts.event("blocked", { stage: "claimDataRoot", ...errorDetail(e) });
+      return blockedResult("claimDataRoot failed");
+    }
+    try {
+      // 规则 7: the scenario's role declarations (incl. seedRole) travel WITH
+      // the environment. Seeding an initial occupant must happen while the app
+      // starts; registerAccounts() only creates accounts afterwards.
       env = await adapter.setupEnv({
         runDir: artifacts.dir,
         seed,
-        dataRoot: join(artifacts.dir, "data"),
+        dataRoot,
+        roles: scenario.roles,
       });
     } catch (e) {
       await artifacts.event("blocked", { stage: "setupEnv", ...errorDetail(e) });
       return blockedResult("setupEnv failed");
+    }
+    // Whatever the app created under our root is registered against THIS run id
+    // (方案 §10: 只清理台账内 ownedBy === runId 的资源).
+    if (env.dbPath !== undefined && insideRoot(dataRoot, env.dbPath)) {
+      registry.register("db", env.dbPath);
+      await registry.flush();
     }
     await artifacts.event("env-ready", { ...env });
 
@@ -221,6 +252,27 @@ export async function executeScenario(
 
     // (f) Steps; consecutive barrier steps form ONE runBarrier group.
     const recordAttempt = async (attempt: Attempt): Promise<void> => {
+      // 铁律 3 applies to STEP evidence exactly as it does to observer
+      // evidence: the kernel verifies every ref (in evidence/, non-empty,
+      // sha256 matches) before it enters the result, and names every ref it
+      // had to drop. Step evidence is not an assertion subject, so a dropped
+      // ref never changes the verdict — it is surfaced in the timeline.
+      const validRefs: EvidenceRef[] = [];
+      for (const ref of attempt.evidence ?? []) {
+        const problem = await artifacts.verifyEvidenceRef(ref);
+        if (problem === null) validRefs.push(ref);
+        else
+          await artifacts.event("evidence-invalid", {
+            stepId: attempt.stepId,
+            actor: attempt.actor,
+            file: ref.file,
+            reason: problem,
+          });
+      }
+      if (validRefs.length === 0) delete attempt.evidence;
+      else if (validRefs.length !== attempt.evidence?.length) attempt.evidence = validRefs;
+      evidence.push(...validRefs);
+
       attempts.push(attempt);
       const detail: Record<string, unknown> = {
         stepId: attempt.stepId,
@@ -229,6 +281,7 @@ export async function executeScenario(
       };
       if (attempt.httpStatus !== undefined) detail.httpStatus = attempt.httpStatus;
       if (attempt.detail !== undefined) detail.detail = attempt.detail;
+      if (attempt.evidence !== undefined) detail.evidence = attempt.evidence.length;
       await artifacts.event("step", detail, { actor: attempt.actor });
     };
 
@@ -372,18 +425,30 @@ export async function executeScenario(
   let result: RunResult | undefined;
   let tornDown: string[] = [];
   let teardownError: string | undefined;
+  let ownedEntries = 0;
+  let ownedRemoved: string[] = [];
   try {
     result = await run();
   } finally {
     try {
       tornDown = await adapter.teardown();
+      // The ledger is the second, independent cleanup pass: whatever the
+      // adapter left behind under OUR root is removed here, and nothing the
+      // ledger does not own is ever touched (§10).
+      if (registry !== undefined) {
+        ownedEntries = registry.ownedCount();
+        ownedRemoved = await registry.teardown();
+      }
     } catch (e) {
       teardownError = e instanceof Error ? e.message : String(e);
     }
   }
   if (result === undefined) throw internalError("run produced no result");
   if (teardownError === undefined)
-    await artifacts.event("torn-down", { paths: tornDown });
+    await artifacts.event("torn-down", {
+      paths: tornDown,
+      ownership: { entries: ownedEntries, removed: ownedRemoved },
+    });
   else await artifacts.event("teardown-error", { error: teardownError });
 
   // (k) Final result.

@@ -37,7 +37,7 @@ import {
 | # | 方法 | 职责 | 关键约束 |
 | --- | --- | --- | --- |
 | 1 | `manifest(): AdapterManifest` | 能力声明 | 见 §3；内容必须真实，套件会逐条验证 |
-| 2 | `setupEnv({runDir, seed, dataRoot})` | 创建隔离环境并启动应用 | 返回的 `baseUrl` 必须在返回时已健康（`GET /healthz` 2xx）；不得删除/重置 `dataRoot` 里你不拥有的内容 |
+| 2 | `setupEnv({runDir, seed, dataRoot, roles})` | 创建隔离环境并启动应用 | 返回的 `baseUrl` 必须在返回时已健康（`GET /healthz` 2xx）；**`roles` 是场景声明的角色（含 `seedRole`），内核在启动前交给你**——能落初始业务状态的适配器必须在此兑现「holder 占用初始名额」（规则 7），因为 `registerAccounts` 之后只能建账号、无法追溯占位；不得删除/重置 `dataRoot` 里你不拥有的内容 |
 | 3 | `registerAccounts(roles)` | 把场景角色注册为应用账号 | 每个角色都必须成功注册；失败必须抛错，不得静默跳过 |
 | 4 | `runStep(step, ctx)` | 执行单个场景步骤 | 结果必须**如实**：点击未触发导航报 `"no-nav"`，不得静默成功（规则 6） |
 | 5 | `runBarrier(steps, ctx)` | 并发提交一个屏障组 | 一个步骤一个 Attempt，**顺序与输入一致**；`manifest.barriers === false` 时内核不会调用它 |
@@ -66,6 +66,10 @@ interface Attempt {
   outcome: "completed" | "rejected" | "no-nav" | "error";
   httpStatus?: number;
   detail?: Record<string, unknown>;
+  // 本步采集到的证据（截图/DOM 快照等）：内核会逐条核对（存在/非空/在
+  // evidence/ 内/sha256 一致）后才登记进 result.json；核对失败的引用被剔除
+  // 并在时间线里具名（铁律 3）。步骤证据不是断言主体，不改变判定。
+  evidence?: EvidenceRef[];
 }
 ```
 
@@ -119,7 +123,10 @@ interface AdapterManifest {
 4. **所有权与清理**（§10）。`setupEnv` 拿到的 `dataRoot` 可能已存在（套件会预先
    创建并在里面放一个"外来文件"）：只创建/记录你拥有的资源，`teardown` 只清理
    台账内 `ownedBy === 本次运行` 的资源，**绝不动外来文件**；`teardown` 必须幂等。
-   数据根目录已有内容但无所有权标记时，你的适配器应拒绝运行。
+   数据根目录已有内容但无所有权标记时，你的适配器应拒绝运行（内核也会在启动前
+   用 `ownership.json` 认领该根：已有内容而无标记 → blocked，绝不当作业务结论）。
+   若应用在 `dataRoot` 下创建了数据库，请在 `EnvSummary.dbPath` 里如实报告它——
+   内核会把它登记进本次运行的台账，并在 `teardown` 后作为第二道清理兜底。
 5. **端口分配**（规则 10）。并行运行必须各用独立端口。用 `freePort()` 探测，
    通过 `RC_PORT` 环境变量交给应用。
 6. **表单提交用原生 POST + 绝对 URL**（规则 5）。相对 action 会被解析到页面路径
@@ -208,12 +215,16 @@ export function createMyAdapter(appPath: string): LocalWebAdapterV1 {
         observers: OBSERVERS,
       };
     },
-    async setupEnv({ runDir: rd, seed, dataRoot }) {
+    // roles 是场景声明的角色；能落初始状态的适配器必须在此兑现 seedRole（规则 7）
+    async setupEnv({ runDir: rd, seed, dataRoot, roles }) {
       runDir = rd;
       const port = await freePort();
       baseUrl = `http://127.0.0.1:${port}`;
       dbPath = `${dataRoot}/app.db`;
-      app = spawnApp(appPath, { ...process.env, RC_PORT: String(port), RC_DB: dbPath, RC_SEED: "[]" });
+      const seedPayload = JSON.stringify(
+        roles.map((r) => ({ username: r.account.username, password: r.account.password, seedRole: r.seedRole })),
+      );
+      app = spawnApp(appPath, { ...process.env, RC_PORT: String(port), RC_DB: dbPath, RC_SEED: seedPayload });
       await waitForHealth(baseUrl, 15_000);
       return { appVersion: "1.0.0", adapterVersion: "0.1.0", baseUrl, seed, platform: process.platform };
     },

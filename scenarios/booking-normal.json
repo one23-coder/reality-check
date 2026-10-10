@@ -2,7 +2,7 @@
   "protocol": { "scenario": "1.0" },
   "id": "booking-normal",
   "name": "正常报名",
-  "description": "单个新用户报名有名额课程：holder 先显式报名占用 1 个名额（内核不向适配器传角色种子，占用意图由 seedRole 声明 + 显式报名步骤保证，规则 7），alice 随后报名成功，bookings 恰好 2 条、剩余名额归 0。正确实现退出码 0。",
+  "description": "单个新用户报名有名额课程：holder 以 seedRole:\"holder\" 声明占用 1 个初始名额，内核在启动环境时把角色声明交给适配器落库（规则 7），alice 随后报名成功，bookings 恰好 2 条、剩余名额归 0。正确实现退出码 0。",
   "app": "booking-app",
   "seed": 7,
   "roles": [
@@ -10,10 +10,6 @@
     { "id": "holder", "account": { "username": "holder_rc", "password": "pw-holder" }, "seedRole": "holder" }
   ],
   "steps": [
-    { "id": "holder-register", "actor": "holder", "op": "register", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-login", "actor": "holder", "op": "login", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-nav-book", "actor": "holder", "op": "navigate", "params": { "path": "/book?course=course-1" } },
-    { "id": "holder-submit-booking", "actor": "holder", "op": "submit" },
     { "id": "alice-register", "actor": "alice", "op": "register", "params": { "username": "alice_rc", "password": "pw-alice" } },
     { "id": "alice-login", "actor": "alice", "op": "login", "params": { "username": "alice_rc", "password": "pw-alice" } },
     { "id": "alice-nav-book", "actor": "alice", "op": "navigate", "params": { "path": "/book?course=course-1" } },

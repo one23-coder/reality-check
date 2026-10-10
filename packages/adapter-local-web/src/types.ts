@@ -62,6 +62,9 @@ export interface Attempt {
   outcome: AttemptOutcome;
   httpStatus?: number;
   detail?: Record<string, unknown>;
+  /** Mirrors protocol `Attempt.evidence` (结果协议 1.0): the kernel verifies
+   * and registers these refs — keep this mirror in sync with the protocol. */
+  evidence?: EvidenceRef[];
 }
 
 export interface StepContext {

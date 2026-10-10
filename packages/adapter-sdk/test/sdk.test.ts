@@ -53,7 +53,7 @@ class BrokenEvidenceAdapter implements LocalWebAdapterV1 {
     const m = this.inner.manifest();
     return { ...m, adapterId: "adapter-broken-evidence", barriers: false };
   }
-  setupEnv(opts: { runDir: string; seed: number; dataRoot: string }): ReturnType<LocalWebAdapterV1["setupEnv"]> {
+  setupEnv(opts: Parameters<LocalWebAdapterV1["setupEnv"]>[0]): ReturnType<LocalWebAdapterV1["setupEnv"]> {
     return this.inner.setupEnv(opts);
   }
   registerAccounts(roles: Role[]): Promise<void> {

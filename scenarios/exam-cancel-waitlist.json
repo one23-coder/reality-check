@@ -4,7 +4,7 @@
   },
   "id": "exam-cancel-waitlist",
   "name": "取消候补递补",
-  "description": "两个 holder 依次显式预约占满座位（exam-1 容量 2，内核不向适配器传角色种子，占用意图由 seedRole 声明 + 显式预约步骤保证，规则 7），bob 预约时座位已满、进入候补队列，随后 holder 取消预约。正确实现按候补队列声明顺序递补队首：reservations 保持满员 2 条、seats-left 回到 0、waitlist 清空。cancel-keeps-seat 故障只删预约不递补（reservations=1、seats-left=1），cancel-releases-seat 规则违规归因。已知局限：适配器清单中不存在 exams 侧的候补队列观察器（waitlist-head/waitlist-order 的 SQL 硬编码 course_id='course-1'，exam 库 waitlist 表无此列，读取必然报错），且场景协议 1.0 的 AssertOp 只有数值比较、无字符串等值断言，因此 waitlist-declared-order 在本场景只能以数值观察器表达（递补后 seats-left 回到 0），队列顺序本体无法作为断言主体、也不声明必然报错的队列观察器；waitlist-order-wrong 故障在单元素队列上与正确实现状态同构，其甄别依赖多候补扩展与队列证据能力。",
+  "description": "两个 holder 以 seedRole:\"holder\" 声明占用全部座位（exam-1 容量 2，内核在启动环境时把角色声明交给适配器落库，规则 7），bob、carol 相继预约时座位已满、按序进入候补队列（bob 位1、carol 位2），随后 holder 取消预约。正确实现按候补队列声明顺序递补队首：reservations 保持满员 2 条、seats-left 回到 0、队首 bob_rc 获得递补名额。cancel-keeps-seat 故障只删预约不递补（reservations=1、seats-left=1）→ cancel-releases-seat 违规、递补顺序无从观察而降级 inconclusive；waitlist-order-wrong 故障递补队尾 carol_rc → 由 reservation-holder 的 eqStr 断言检出。",
   "app": "exam-seat-app",
   "seed": 23,
   "roles": [
@@ -42,68 +42,6 @@
     }
   ],
   "steps": [
-    {
-      "id": "holder-register",
-      "actor": "holder",
-      "op": "register",
-      "params": {
-        "username": "holder_rc",
-        "password": "pw-holder"
-      }
-    },
-    {
-      "id": "holder-login",
-      "actor": "holder",
-      "op": "login",
-      "params": {
-        "username": "holder_rc",
-        "password": "pw-holder"
-      }
-    },
-    {
-      "id": "holder-nav-reserve",
-      "actor": "holder",
-      "op": "navigate",
-      "params": {
-        "path": "/reserve?exam=exam-1"
-      }
-    },
-    {
-      "id": "holder-submit-reserve",
-      "actor": "holder",
-      "op": "submit"
-    },
-    {
-      "id": "holder2-register",
-      "actor": "holder2",
-      "op": "register",
-      "params": {
-        "username": "holder2_rc",
-        "password": "pw-holder2"
-      }
-    },
-    {
-      "id": "holder2-login",
-      "actor": "holder2",
-      "op": "login",
-      "params": {
-        "username": "holder2_rc",
-        "password": "pw-holder2"
-      }
-    },
-    {
-      "id": "holder2-nav-reserve",
-      "actor": "holder2",
-      "op": "navigate",
-      "params": {
-        "path": "/reserve?exam=exam-1"
-      }
-    },
-    {
-      "id": "holder2-submit-reserve",
-      "actor": "holder2",
-      "op": "submit"
-    },
     {
       "id": "bob-register",
       "actor": "bob",
@@ -165,6 +103,15 @@
       "id": "carol-submit-reserve",
       "actor": "carol",
       "op": "submit"
+    },
+    {
+      "id": "holder-login",
+      "actor": "holder",
+      "op": "login",
+      "params": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      }
     },
     {
       "id": "holder-nav-cancel",

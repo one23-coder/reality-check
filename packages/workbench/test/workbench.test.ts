@@ -135,7 +135,9 @@ describe("workbench static UI and scenario catalog", () => {
     assert.equal(status, 200);
     const s = body as { id: string; steps: unknown[]; assertions: unknown[]; seed: number };
     assert.equal(s.id, "booking-normal");
-    assert.equal(s.steps.length, 8);
+    // 4 steps: alice register/login/navigate/submit — the holder occupies its
+    // slot through the kernel's role seeding (规则 7), not through steps.
+    assert.equal(s.steps.length, 4);
     assert.equal(s.assertions.length, 2);
   });
 

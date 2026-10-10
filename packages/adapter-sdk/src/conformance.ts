@@ -44,6 +44,14 @@ import {
 import { executeScenario, type LocalWebAdapterV1, type StepContext } from "@rc/core";
 import { extractSqlTables, sha256File } from "./helpers.js";
 
+/** Roles the suite hands to setupEnv AND registerAccounts — the same contract
+ * the kernel uses (方案 §3.3 规则 7). Both are plain "none" roles so the scope
+ * of the check stays "the adapter accepts and reports role declarations". */
+const CONFORMANCE_ROLES: Scenario["roles"] = [
+  { id: "cf-alice", account: { username: "cf-alice", password: "pw-alice" }, seedRole: "none" },
+  { id: "cf-bob", account: { username: "cf-bob", password: "pw-bob" }, seedRole: "none" },
+];
+
 export interface CheckResult {
   name: string;
   pass: boolean;
@@ -233,7 +241,9 @@ export async function runConformanceSuite(
   let dbPath: string | null = null;
   let healthNote = "";
   try {
-    const summary = await adapter.setupEnv({ runDir, seed: 7, dataRoot });
+    // The kernel always hands the scenario's role declarations to setupEnv
+    // (方案 §3.3 规则 7); the suite mirrors that contract.
+    const summary = await adapter.setupEnv({ runDir, seed: 7, dataRoot, roles: CONFORMANCE_ROLES });
     baseUrl = summary.baseUrl;
     dbPath = summary.dbPath ?? null;
   } catch (e) {
@@ -253,10 +263,7 @@ export async function runConformanceSuite(
   await check("fresh-connection-observation", async () => {
     if (envError !== null) throw new Error(`setupEnv failed: ${envError}`);
     const m = adapter.manifest();
-    await adapter.registerAccounts([
-      { id: "cf-alice", account: { username: "cf-alice", password: "pw-alice" }, seedRole: "none" },
-      { id: "cf-bob", account: { username: "cf-bob", password: "pw-bob" }, seedRole: "none" },
-    ]);
+    await adapter.registerAccounts(CONFORMANCE_ROLES);
     const notes = ["registerAccounts(2 roles) ok"];
 
     if (m.supportedOps.includes("navigate")) {

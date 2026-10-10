@@ -2,7 +2,7 @@
   "protocol": { "scenario": "1.0" },
   "id": "exam-normal",
   "name": "正常预约座位",
-  "description": "单个新用户预约有座位的考试（exam-1，容量 2）：holder 先显式预约占用 1 个座位（内核不向适配器传角色种子，占用意图由 seedRole 声明 + 显式预约步骤保证，规则 7），alice 随后预约成功，reservations 恰好 2 条、剩余座位归 0。正确实现退出码 0。",
+  "description": "单个新用户预约有座位的考试（exam-1，容量 2）：holder 以 seedRole:\"holder\" 声明占用 1 个初始座位，内核在启动环境时把角色声明交给适配器落库（规则 7），alice 随后预约成功，reservations 恰好 2 条、剩余座位归 0。正确实现退出码 0。",
   "app": "exam-seat-app",
   "seed": 17,
   "roles": [
@@ -10,10 +10,6 @@
     { "id": "holder", "account": { "username": "holder_rc", "password": "pw-holder" }, "seedRole": "holder" }
   ],
   "steps": [
-    { "id": "holder-register", "actor": "holder", "op": "register", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-login", "actor": "holder", "op": "login", "params": { "username": "holder_rc", "password": "pw-holder" } },
-    { "id": "holder-nav-reserve", "actor": "holder", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },
-    { "id": "holder-submit-reserve", "actor": "holder", "op": "submit" },
     { "id": "alice-register", "actor": "alice", "op": "register", "params": { "username": "alice_rc", "password": "pw-alice" } },
     { "id": "alice-login", "actor": "alice", "op": "login", "params": { "username": "alice_rc", "password": "pw-alice" } },
     { "id": "alice-nav-reserve", "actor": "alice", "op": "navigate", "params": { "path": "/reserve?exam=exam-1" } },

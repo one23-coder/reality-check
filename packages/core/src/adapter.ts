@@ -39,7 +39,17 @@ export interface StepContext {
 
 export interface LocalWebAdapterV1 {
   manifest(): AdapterManifest;
-  setupEnv(opts: { runDir: string; seed: number; dataRoot: string }): Promise<EnvSummary>;
+  /** Bring the app up. `roles` are the scenario's DECLARED roles, including
+   * their `seedRole` (方案 §3.3 规则 7): an adapter that can seed initial
+   * business state (占用初始名额的持有者) must honor it here, because
+   * `registerAccounts` only creates accounts and cannot retroactively occupy a
+   * slot. An adapter that ignores `roles` must declare that limitation. */
+  setupEnv(opts: {
+    runDir: string;
+    seed: number;
+    dataRoot: string;
+    roles: Role[];
+  }): Promise<EnvSummary>;
   registerAccounts(roles: Role[]): Promise<void>;
   runStep(step: Step, ctx: StepContext): Promise<Attempt>;
   /** Submit a barrier group concurrently; one Attempt per step, in order. */

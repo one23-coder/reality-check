@@ -52,6 +52,12 @@ jobs:
       - name: Test (root test script)
         run: npm test
 
+      - name: Three-entry consistency (CLI / workbench / MCP, 方案 §7)
+        run: node scripts/tri-entry-consistency.mjs
+
+      - name: Positive/negative matrix (方案 §0, exit code is the contract)
+        run: node scripts/positive-negative-matrix.mjs
+
   clean-env-twice:
     name: clean-env-twice (two consecutive test rounds, one runner)
     runs-on: ubuntu-latest

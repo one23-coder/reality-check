@@ -95,6 +95,10 @@ export interface Attempt {
   outcome: "completed" | "rejected" | "no-nav" | "error";
   httpStatus?: number;
   detail?: Record<string, unknown>;
+  /** Evidence the adapter captured for THIS step (截图/DOM 快照). The kernel
+   * verifies every ref before it enters the result (方案 §10 证据: 采集即落盘 +
+   * 内核登记核对); a step may legitimately carry none. */
+  evidence?: EvidenceRef[];
 }
 
 export interface RunResult {
@@ -174,7 +178,11 @@ export const resultV: V<RunResult> = vObject<RunResult>({
           op: vString,
           outcome: vEnum<Attempt["outcome"]>(["completed", "rejected", "no-nav", "error"]),
         },
-        optional: { httpStatus: vInt({ min: 100, max: 599 }), detail: vRecord(vUnionV) },
+        optional: {
+          httpStatus: vInt({ min: 100, max: 599 }),
+          detail: vRecord(vUnionV),
+          evidence: vArray(evidenceRefV),
+        },
       }),
     ),
     env: vObject<EnvSummary>({

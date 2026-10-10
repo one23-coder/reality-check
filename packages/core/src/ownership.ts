@@ -7,6 +7,7 @@
  * no ownership marker is refused (§10: 已有内容但无所有权标记时拒绝运行).
  */
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { configError, internalError } from "./errors.js";
@@ -78,16 +79,19 @@ export class OwnershipRegistry {
   }
 
   /** Remove every owned resource (dirs recursive, files single). Returns the
-   * torn-down list; entries created by other runs are never touched. */
+   * resources this call ACTUALLY removed — a resource another layer already
+   * cleaned is dropped from the ledger but not reported as torn down here, so
+   * the event stays truthful; entries created by other runs are never touched. */
   async teardown(): Promise<string[]> {
     const tornDown: string[] = [];
     for (const entry of [...this.byResource.values()].sort((a, b) =>
       b.resource.localeCompare(a.resource),
     )) {
       if (entry.ownedBy !== this.ledger.runId) continue;
+      const existed = existsSync(entry.resource);
       await rm(entry.resource, { recursive: entry.kind === "dir" || entry.kind === "db", force: true });
       this.byResource.delete(entry.resource);
-      tornDown.push(entry.resource);
+      if (existed) tornDown.push(entry.resource);
     }
     this.ledger.entries = [...this.byResource.values()];
     await this.flush();

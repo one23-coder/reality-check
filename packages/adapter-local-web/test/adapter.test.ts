@@ -107,6 +107,13 @@ test("happy path: register/login/book through real pages, observers read committ
     }
     assert.equal(attempts[4]?.detail && (attempts[4].detail as Record<string, unknown>).banner, "报名成功");
 
+    // Every step hands back verifiable evidence refs for the kernel to register
+    // (方案 §4 铁律 3): screenshot + DOM snapshot, hashed, actor-tagged.
+    assert.deepEqual(attempts[0]?.evidence?.map((e) => e.kind), ["screenshot", "dom-snapshot"]);
+    assert.equal(attempts[0]?.evidence?.[0]?.actor, "bob");
+    assert.match(String(attempts[0]?.evidence?.[0]?.sha256), /^[0-9a-f]{64}$/);
+    assert.equal(attempts[4]?.evidence?.[1]?.file, "evidence/step-5-bob.dom.html");
+
     // Seeded holder booking + bob's booking.
     const count = await adapter.observe("booking-count");
     assert.equal(count.observerId, "booking-count");
