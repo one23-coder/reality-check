@@ -52,7 +52,7 @@ test("manifest declares the adapter contract", () => {
   assert.equal(m.protocol.manifest, "1.0");
   assert.equal(m.adapterId, "adapter-local-web");
   assert.equal(m.adapterVersion, "0.1.0");
-  assert.equal(m.scenarioVersion, "1.0");
+  assert.equal(m.scenarioVersion, "1.1");
   assert.equal(m.barriers, true);
   assert.deepEqual([...m.supportedOps].sort(), [
     "barrier",

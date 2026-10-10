@@ -15,6 +15,10 @@ import {
   MANIFEST_VERSION,
   RESULT_VERSION,
   SCENARIO_VERSION,
+  SUPPORTED_SCENARIO_VERSIONS,
+  isSupportedScenarioVersion,
+  scenarioVersionAtLeast,
+  type Assertion,
   type Attempt,
   type EnvSummary,
   type EvidenceRef,
@@ -75,14 +79,21 @@ export async function executeScenario(
   const manifest = adapter.manifest();
 
   // (a) Version gate — before any run dir or environment is created.
-  if (scenario.protocol.scenario !== SCENARIO_VERSION)
+  // Both 1.0 and 1.1 documents are executable (1.1 adds conditional steps); an
+  // adapter must declare that it serves at least the scenario's version.
+  const scenarioVersion = String(scenario.protocol.scenario);
+  if (!isSupportedScenarioVersion(scenarioVersion))
     throw configError(
-      `scenario protocol ${String(scenario.protocol.scenario)} not supported (kernel serves ${SCENARIO_VERSION})`,
+      `scenario protocol ${scenarioVersion} not supported (kernel serves ${SUPPORTED_SCENARIO_VERSIONS.join(", ")})`,
     );
-  if (manifest.scenarioVersion !== SCENARIO_VERSION)
+  if (!scenarioVersionAtLeast(manifest.scenarioVersion, scenarioVersion))
     throw configError(
-      `adapter "${manifest.adapterId}" serves scenario ${manifest.scenarioVersion}, kernel serves ${SCENARIO_VERSION}`,
+      `adapter "${manifest.adapterId}" serves scenario ${manifest.scenarioVersion}, which does not cover this scenario's ${scenarioVersion}`,
     );
+  // 条件步骤需要 1.1：1.0 文档混用 `when` 直接拒绝（校验器已在场景层拦，这里
+  // 是第二道，保证内核即使拿到未校验对象也不会执行半成品语义）。
+  if (scenarioVersion === "1.0" && scenario.steps.some((s) => s.when !== undefined))
+    throw configError(`scenario ${scenario.id} declares version 1.0 but uses conditional steps (需要 1.1)`);
   if (manifest.protocol.manifest !== MANIFEST_VERSION)
     throw configError(
       `adapter manifest protocol ${String(manifest.protocol.manifest)} not supported (kernel serves ${MANIFEST_VERSION})`,
@@ -94,6 +105,11 @@ export async function executeScenario(
       throw configError(`adapter does not support step op "${step.op}" (step ${step.id})`);
   // A retried step has ONE sequential attempt list; a barrier step is submitted
   // concurrently and has no meaningful "retry" — refuse instead of guessing.
+  for (const step of scenario.steps)
+    if (step.barrier === true && step.when !== undefined)
+      throw configError(
+        `step "${step.id}" declares both barrier and when; a concurrent group has no per-step condition semantics`,
+      );
   for (const step of scenario.steps)
     if (step.barrier === true && step.retry !== undefined)
       throw configError(
@@ -265,24 +281,30 @@ export async function executeScenario(
     await artifacts.event("accounts-registered", { count: scenario.roles.length });
 
     // (f) Steps; consecutive barrier steps form ONE runBarrier group.
-    const recordAttempt = async (attempt: Attempt): Promise<void> => {
-      // 铁律 3 applies to STEP evidence exactly as it does to observer
-      // evidence: the kernel verifies every ref (in evidence/, non-empty,
-      // sha256 matches) before it enters the result, and names every ref it
-      // had to drop. Step evidence is not an assertion subject, so a dropped
-      // ref never changes the verdict — it is surfaced in the timeline.
-      const validRefs: EvidenceRef[] = [];
-      for (const ref of attempt.evidence ?? []) {
+    /** 铁律 3 gate shared by EVERY evidence path — step evidence, observer
+     * evidence and `when`-condition observations: verify each ref (in this
+     * run's evidence/, non-empty, sha256 matches), NAME the ones that had to be
+     * dropped, and return only the verifiable ones. */
+    const verifyEvidence = async (
+      refs: readonly EvidenceRef[],
+      context: Record<string, unknown>,
+    ): Promise<EvidenceRef[]> => {
+      const valid: EvidenceRef[] = [];
+      for (const ref of refs) {
         const problem = await artifacts.verifyEvidenceRef(ref);
-        if (problem === null) validRefs.push(ref);
-        else
-          await artifacts.event("evidence-invalid", {
-            stepId: attempt.stepId,
-            actor: attempt.actor,
-            file: ref.file,
-            reason: problem,
-          });
+        if (problem === null) valid.push(ref);
+        else await artifacts.event("evidence-invalid", { ...context, file: ref.file, reason: problem });
       }
+      return valid;
+    };
+
+    const recordAttempt = async (attempt: Attempt): Promise<void> => {
+      // Step evidence is not an assertion subject, so a dropped ref never
+      // changes the verdict — it is surfaced in the timeline instead.
+      const validRefs = await verifyEvidence(attempt.evidence ?? [], {
+        stepId: attempt.stepId,
+        actor: attempt.actor,
+      });
       if (validRefs.length === 0) delete attempt.evidence;
       else if (validRefs.length !== attempt.evidence?.length) attempt.evidence = validRefs;
       evidence.push(...validRefs);
@@ -338,6 +360,66 @@ export async function executeScenario(
     while (i < steps.length) {
       const step = steps[i];
       if (step === undefined) break; // unreachable; noUncheckedIndexedAccess
+      if (step.when !== undefined) {
+        // 条件步骤 (场景 1.1, 规则 22): observe the DECLARED observer, judge with
+        // the assertion vocabulary, and never guess — an undecidable condition
+        // (evidence gap) blocks the run instead of silently taking a branch.
+        const condition = step.when;
+        const reading = await adapter.observe(condition.observer);
+        const validRefs = await verifyEvidence(reading.evidence, {
+          stepId: step.id,
+          actor: step.actor,
+          observerId: condition.observer,
+          stage: "when",
+        });
+        evidence.push(...validRefs);
+        const assertion: Assertion = {
+          id: `when:${step.id}`,
+          rule: `when:${step.id}`,
+          observer: condition.observer,
+          op: condition.op,
+          ...(condition.value !== undefined ? { value: condition.value } : {}),
+          ...(condition.expected !== undefined ? { expected: condition.expected } : {}),
+        };
+        const evaluation = evaluateAssertion(assertion, new Map([[condition.observer, reading]]));
+        await artifacts.event("when", {
+          stepId: step.id,
+          observerId: condition.observer,
+          verdict: evaluation.verdict,
+          observed: evaluation.observed,
+          expected: evaluation.expected,
+          decision: evaluation.verdict === "held" ? "run" : evaluation.verdict === "violated" ? "skip" : "undecidable",
+          evidence: validRefs.length,
+        });
+        if (evaluation.verdict === "inconclusive") {
+          await artifacts.event("blocked", {
+            stage: "when",
+            stepId: step.id,
+            observerId: condition.observer,
+            error:
+              `cannot decide the condition of step "${step.id}": observation of "${condition.observer}" ` +
+              `is inconclusive (missing ${(evaluation.missingEvidenceTypes ?? ["evidence"]).join(", ")})`,
+          });
+          return blockedResult("a conditional step could not be decided");
+        }
+        if (evaluation.verdict === "violated") {
+          const skipped: Attempt = {
+            stepId: step.id,
+            actor: step.actor,
+            op: step.op,
+            outcome: "skipped",
+            detail: {
+              when: { observer: condition.observer, op: condition.op },
+              observed: evaluation.observed,
+              expected: evaluation.expected,
+            },
+            ...(validRefs.length > 0 ? { evidence: validRefs } : {}),
+          };
+          await recordAttempt(skipped);
+          i++;
+          continue;
+        }
+      }
       if (step.barrier === true) {
         const group: Step[] = [];
         while (i < steps.length) {
@@ -398,19 +480,7 @@ export async function executeScenario(
         // must exist inside this run's evidence dir and hash to the ref's
         // sha256. Invalid refs are dropped and named; they downgrade any
         // assertion citing the observer to inconclusive (§10).
-        const validRefs: EvidenceRef[] = [];
-        for (const ref of reading.evidence) {
-          const problem = await artifacts.verifyEvidenceRef(ref);
-          if (problem === null) {
-            validRefs.push(ref);
-          } else {
-            await artifacts.event("evidence-invalid", {
-              observerId: observer.id,
-              file: ref.file,
-              reason: problem,
-            });
-          }
-        }
+        const validRefs = await verifyEvidence(reading.evidence, { observerId: observer.id });
         if (validRefs.length !== reading.evidence.length) {
           unverifiableObservers.add(observer.id);
           reading.evidence = validRefs;

@@ -1,6 +1,6 @@
 {
   "protocol": {
-    "scenario": "1.0"
+    "scenario": "1.1"
   },
   "id": "booking-cancel-waitlist",
   "name": "取消候补递补",

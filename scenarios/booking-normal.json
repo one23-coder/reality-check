@@ -1,5 +1,5 @@
 {
-  "protocol": { "scenario": "1.0" },
+  "protocol": { "scenario": "1.1" },
   "id": "booking-normal",
   "name": "正常报名",
   "description": "单个新用户报名有名额课程：holder 以 seedRole:\"holder\" 声明占用 1 个初始名额，内核在启动环境时把角色声明交给适配器落库（规则 7），alice 随后报名成功，bookings 恰好 2 条、剩余名额归 0。正确实现退出码 0。",

@@ -23,7 +23,7 @@ async function makeArtifacts(): Promise<RunArtifacts> {
 
 function minimalResult(): RunResult {
   return {
-    protocol: { result: "1.0" },
+    protocol: { result: "1.1" },
     runId: "rc-test-run",
     scenarioId: "s1",
     scenarioSha256: "deadbeef",

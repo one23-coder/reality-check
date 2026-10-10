@@ -1,5 +1,5 @@
 {
-  "protocol": { "scenario": "1.0" },
+  "protocol": { "scenario": "1.1" },
   "id": "exam-normal",
   "name": "正常预约座位",
   "description": "单个新用户预约有座位的考试（exam-1，容量 2）：holder 以 seedRole:\"holder\" 声明占用 1 个初始座位，内核在启动环境时把角色声明交给适配器落库（规则 7），alice 随后预约成功，reservations 恰好 2 条、剩余座位归 0。正确实现退出码 0。",

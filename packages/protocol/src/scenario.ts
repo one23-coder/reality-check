@@ -6,6 +6,11 @@
  */
 import type { AttemptOutcome } from "./result.js";
 import {
+  SCENARIO_VERSION,
+  SUPPORTED_SCENARIO_VERSIONS,
+  type ScenarioVersion,
+} from "./versions.js";
+import {
   vArray,
   vBool,
   vEnum,
@@ -17,9 +22,9 @@ import {
   type V,
 } from "./v.js";
 
-export const SCENARIO_VERSION = "1.0";
+export { SCENARIO_VERSION };
 
-/** Closed step vocabulary for scenario 1.0. Adapters declare which ops they support. */
+/** Closed step vocabulary. Adapters declare which ops they support. */
 export const STEP_OPS = [
   "navigate",
   "register",
@@ -57,6 +62,21 @@ export interface Step {
    * the run's outcome — so a retry can never hide a business result, it can
    * only absorb an infrastructure flake that is visible in the record. */
   retry?: StepRetry;
+  /** Conditional step (场景 1.1, 方案 §3.3 规则 22). When the condition does not
+   * hold the step is NOT executed and is recorded as `skipped` — never as a
+   * failure and never as a success. The condition must name a DECLARED observer
+   * (单一口径 stays intact) and is evaluated with the same comparison
+   * vocabulary as assertions. */
+  when?: StepCondition;
+}
+
+export interface StepCondition {
+  observer: string;
+  op: AssertOp;
+  /** Required for numeric ops (forbidden for eqStr). */
+  value?: number;
+  /** Required for op "eqStr" (forbidden otherwise). */
+  expected?: string;
 }
 
 export interface StepRetry {
@@ -76,16 +96,21 @@ export interface Observer {
   expectColumns: string[];
 }
 
-export type AssertOp =
-  | "eq"
-  | "ne"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "countEq"
+/** Closed assertion vocabulary — also used by conditional steps (`when`), so a
+ * condition can never express something an assertion cannot. */
+export const ASSERT_OPS = [
+  "eq",
+  "ne",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "countEq",
   /** String equality on the observer's first column (账号名等), compared to `expected`. */
-  | "eqStr";
+  "eqStr",
+] as const;
+
+export type AssertOp = (typeof ASSERT_OPS)[number];
 
 export interface Assertion {
   id: string;
@@ -105,7 +130,7 @@ export interface Rule {
 }
 
 export interface Scenario {
-  protocol: { scenario: typeof SCENARIO_VERSION };
+  protocol: { scenario: ScenarioVersion };
   id: string;
   name: string;
   description: string;
@@ -137,11 +162,17 @@ function vUnion(value: unknown, path: string): string | number | boolean {
   throw new Error(`${path}: expected string|number|boolean`);
 }
 
+const whenV = vObject<StepCondition>({
+  required: { observer: vString, op: vEnum<AssertOp>([...ASSERT_OPS]) },
+  optional: { value: vInt({ min: 0 }), expected: vString },
+});
+
 const stepV = vObject<Step>({
   required: { id: idField, actor: vString, op: vEnum<StepOp>(STEP_OPS) },
   optional: {
     params: vRecord(vUnion),
     barrier: vBool,
+    when: whenV,
     retry: vObject<StepRetry>({
       required: { attempts: vInt({ min: 1, max: STEP_RETRY_MAX_ATTEMPTS }) },
       optional: {
@@ -168,7 +199,7 @@ const assertionV = vObject<Assertion>({
     id: idField,
     rule: vString,
     observer: vString,
-    op: vEnum<AssertOp>(["eq", "ne", "gt", "gte", "lt", "lte", "countEq", "eqStr"]),
+    op: vEnum<AssertOp>([...ASSERT_OPS]),
   },
   optional: {
     /** Required for numeric ops (forbidden for eqStr): the comparison value. */
@@ -185,7 +216,7 @@ const ruleV = vObject<Rule>({
 export const scenarioV: V<Scenario> = (value, path) => {
   const s = vObject<Scenario>({
     required: {
-      protocol: vObject({ required: { scenario: vLiteral(SCENARIO_VERSION) } }),
+      protocol: vObject({ required: { scenario: vEnum<ScenarioVersion>([...SUPPORTED_SCENARIO_VERSIONS]) } }),
       id: idField,
       name: vString,
       description: vString,
@@ -223,6 +254,32 @@ export const scenarioV: V<Scenario> = (value, path) => {
         throw new Error(`assertions[${a.id}]: "expected" is only valid for op "eqStr"`);
     }
   }
+  // 条件步骤（场景 1.1）：1.0 文档不得使用；条件只能引用已声明观察器；比较
+  // 词汇与断言一致（eqStr 用 expected，其余用 value）；并发组不接受逐步骤条件。
+  for (const step of s.steps) {
+    const when = step.when;
+    if (when === undefined) continue;
+    if (s.protocol.scenario === "1.0")
+      throw new Error(
+        `steps[${step.id}].when: conditional steps require scenario 1.1 (this document declares 1.0)`,
+      );
+    if (step.barrier === true)
+      throw new Error(`steps[${step.id}]: a barrier step cannot be conditional (并发组没有逐步骤条件的语义)`);
+    if (!observerIds.has(when.observer))
+      throw new Error(`steps[${step.id}].when.observer: unknown observer "${when.observer}"`);
+    if (when.op === "eqStr") {
+      if (when.expected === undefined)
+        throw new Error(`steps[${step.id}].when: op "eqStr" requires "expected"`);
+      if (when.value !== undefined)
+        throw new Error(`steps[${step.id}].when: "value" is not valid for op "eqStr"`);
+    } else {
+      if (when.value === undefined)
+        throw new Error(`steps[${step.id}].when: numeric op "${when.op}" requires "value"`);
+      if (when.expected !== undefined)
+        throw new Error(`steps[${step.id}].when: "expected" is only valid for op "eqStr"`);
+    }
+  }
+
   // Barriers: a barrier step must be followed by >=1 more barrier step in the
   // same group; a lone barrier step is a config error (同步屏障无意义).
   for (let i = 0; i < s.steps.length; i++) {

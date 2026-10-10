@@ -7,6 +7,7 @@
  */
 import {
   SCENARIO_VERSION,
+  isSupportedScenarioVersion,
   type AdapterManifest,
   type Scenario,
 } from "@rc/protocol";
@@ -22,7 +23,7 @@ import {
 } from "../config.js";
 
 export function checkCapabilities(scenario: Scenario, manifest: AdapterManifest): void {
-  if (scenario.protocol.scenario !== SCENARIO_VERSION) {
+  if (!isSupportedScenarioVersion(String(scenario.protocol.scenario))) {
     throw configError(
       `scenario protocol ${String(scenario.protocol.scenario)} not supported (expected ${SCENARIO_VERSION})`,
     );

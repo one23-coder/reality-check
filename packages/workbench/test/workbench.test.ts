@@ -234,7 +234,7 @@ describe("workbench run through the REAL kernel (e2e, browser)", () => {
 
     const wbResult = await readJson(path.join(runsDir, run.runId, "result.json"));
     assert.equal(wbResult["verdict"], "passed");
-    assert.deepEqual(wbResult["protocol"], { result: "1.0" });
+    assert.deepEqual(wbResult["protocol"], { result: "1.1" });
     assert.equal(wbResult["scenarioId"], "booking-normal");
     assert.equal((wbResult["ruleEvaluations"] as unknown[]).length, 2);
     assert.ok((wbResult["evidence"] as unknown[]).length > 0);

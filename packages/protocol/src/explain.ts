@@ -48,6 +48,13 @@ export function explainResult(result: RunResult): string[] {
     );
   }
 
+  const skipped = result.attempts.filter((a) => a.outcome === "skipped");
+  if (skipped.length > 0) {
+    lines.push(
+      `跳过步骤 (when 条件不成立): ${skipped.map((a) => a.stepId).join(", ")} —— 既非失败也非通过，已留在时间线里`,
+    );
+  }
+
   const retried = result.attempts.filter((a) => (a.attemptIndex ?? 1) > 1);
   if (retried.length > 0) {
     lines.push(

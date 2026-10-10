@@ -64,7 +64,7 @@
 | 取消候补递补 | 退出码 0，5/5 断言通过 | — | 退出码 1，✗ cancel-releases-slot、✗ waitlist-declared-order（3 断言失败） | 退出码 1，✗ waitlist-declared-order（4 断言通过不受牵连） |
 
 - **CLI 五命令**：`check`（结构校验+能力检查，六场景全过）、`run`、`rerun --run-id`（同种子重建环境重跑，实测正确版本重跑仍通过）、`export`（列出历史运行及复跑命令）、`plan`（受限规划器；无线索且无可用模型时不选任何场景，空场景目录为配置错误）。
-- **测试**：**137 项全过（2026-10-10 四轮 `npm run verify` 实测；首轮基线为 103 项中 99 通过 / 4 失败）**。四轮新增 `explainResult`/`slowestSteps`（协议层）、有界重试与可观测性（内核层）、blocked 具象化输出（CLI 层）等分组。新增测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、角色声明传递、步骤证据登记与剔除、数据根台账与兜底清理、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合 + `Attempt.evidence` 校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」「证据采集失败必须留痕」「每个步骤交回可核对证据引用」三项。
+- **测试**：**148 项全过（2026-10-10 五轮 `npm run verify` 实测；首轮基线为 103 项中 99 通过 / 4 失败）**。五轮新增 `scenario 1.1 when` 校验（协议层）、条件步骤四种分支（内核层：成立/不成立/无法判定/barrier 拒绝）等分组。新增测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、角色声明传递、步骤证据登记与剔除、数据根台账与兜底清理、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合 + `Attempt.evidence` 校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」「证据采集失败必须留痕」「每个步骤交回可核对证据引用」三项。
 - **退出码契约实测**：0（通过）、1（业务违规）、2（证据不完整降级）、3（blocked，`scripts/blocked-case.mjs` PASS）、64（配置非法，含 BOM JSON 被拒、空场景目录的 `plan`）、70（工具自身异常）。
 - **正反例配对矩阵已脚本化（2026-10-10）**：`scripts/positive-negative-matrix.mjs` 一条命令跑完 19 个用例（6 场景 `check` + booking/exam 正确实现 + 四个故障开关 + `rerun`），实测 19/19 退出码与归因规则一致，见附录 A.6。
 - **内核级保证（2026-10-10 两轮累计）**：内核逐条核对适配器交回的证据引用（存在性 + 哈希 + 路径），观察器证据失败即降级 inconclusive 并具名 `evidence-file`，步骤证据失败即剔除并具名；场景观察器 SQL 与适配器清单 SQL 必须同源（单一口径，仅空白差异被容忍）；适配器拒绝使用不属于本次运行的 db 文件；内核在启动前认领数据根并把应用库登记进台账；场景声明的 `seedRole` 由内核交给 `setupEnv` 真实兑现（见 §3.3 规则 11–16）。
@@ -102,6 +102,7 @@
 19. **重试是有界的、可见的、只吸收基础设施抖动**（2026-10-10 四轮）：`step.retry = { attempts: 1..5, on?: AttemptOutcome[] }`，默认只在 `error` 上重试；每次尝试都以 `step-retry` 事件留在时间线里，该步骤的 Attempt 记录 `attemptIndex` 与被测时长，判定由**最后一次**尝试决定。因此重试能把一次抖动变成成功，**永远不能**把业务失败洗成通过（`rejected`/`no-nav` 需显式写进 `on` 才会重试，而默认不写）。`barrier` + `retry` 同步骤声明在运行前拒绝——并发组没有「逐步骤重试」的语义。
 20. **报错必须自证**（2026-10-10 四轮）：非 passed/failed 的结论一律把「为什么」打印出来——blocked 的阶段、原始错误、无法执行的步骤 id 与建议；inconclusive 缺哪一类证据；并给出产物绝对路径。措辞由 protocol 的 `explainResult()` 单点提供，CLI 与 MCP 共用，避免各处口径不一。
 21. **可观测性靠事件流，不靠猜**（2026-10-10 四轮）：内核把每个 Attempt 的耗时写进 `durationMs`（含 barrier 组），并支持 `onEvent` 实时回调；CLI `--verbose` 因此能边跑边打印步骤/观察/重试，结束后给出最慢三步。时间线仍是唯一真相来源（`seq` 排序），实时流只是它的镜像。
+22. **条件步骤：跳过是记录，不是结论**（2026-10-10 五轮，场景/结果升版 1.0 → 1.1）：`steps[].when` 只能引用**已声明观察器**，用与断言同一套词汇判定；条件不成立 ⇒ 该步 `skipped`（不执行、不进 blocked、也不当成功，必须留在时间线与报告里）；条件**无法判定**（观察器 0 行/列缺失/证据核对失败）⇒ 整轮 blocked——在证据不足时替用户选分支等于伪造结论。`when` + `barrier` 同步骤拒绝；`when` 出现在 1.0 文档被校验器与内核**两道**拒绝。升版按 `docs/protocol-reference.md` §6 的模板执行，并重跑全部证据链。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -283,7 +284,7 @@ CLI（已有）／工作台／MCP／CI
 
 1. **CI 托管 Runner 实跑绿的记录**：把 `npm test` / 三入口 / 矩阵 / 基准的运行号写进附录 A（工作流步骤已就位，缺 GitHub Runner 执行）。
 2. **≥3 个真实外部项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况；需要外部输入，无法自证。
-3. **场景条件分支（`when`）**：设计草案见 `docs/scenario-guide.md` §4.4。这是**需要升版**的改动（新增 `skipped` outcome、改变步骤语义），必须一次做完：协议 1.1 + 版本门禁 + 校验器 + 适配器契约 + 全部场景与正反例矩阵重跑；不做半成品。
+3. ~~场景条件分支（`when`）~~ —— **已完成（五轮）**：场景/结果升版 1.1，语义与边界见规则 22、`docs/scenario-guide.md` §4.4、`docs/protocol-reference.md` §6；示例场景 + 矩阵 + 标注案例集同步（A.10）。
 3. ~~预先标注的正常/故障案例集评估~~ —— **已完成**：`fixtures/diagnostic-cases.json` + `scripts/diagnostic-benchmark.mjs`，12/12、漏报 0、误报 0（A.8，含一处标签修正的公开）。
 4. ~~未参与开发的编程助手闭环~~ —— **已完成**：`scripts/external-agent-loop.mjs`（仅 MCP 公开接口 + 一次应用文本编辑，A.8）。
 
@@ -303,7 +304,7 @@ CLI（已有）／工作台／MCP／CI
 
 | # | 判据（可检验） | 现状 | 证据 / 缺口 |
 | --- | --- | --- | --- |
-| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 137/137（2026-10-10 四轮） |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 148/148（2026-10-10 五轮） |
 | 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
 | 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
 | 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
@@ -321,7 +322,7 @@ CLI（已有）／工作台／MCP／CI
 | 16 | 面向使用者的文档：场景编写指南、协议字段速查、适配器开发教程 | ✅ | `docs/scenario-guide.md`、`docs/protocol-reference.md`、`docs/adapter-tutorial.md`（README 有索引） |
 | 17 | 报错具象化：blocked/inconclusive 直接说明原因与建议、给出产物路径 | ✅ | protocol `explainResult()` 单点措辞，CLI 与 MCP 共用；cli 测试断言 blocked 输出含阶段/原因/建议/路径 |
 | 18 | 运行时可观测性：实时步骤流 + 每步耗时 + 最慢步骤 | ✅ | 内核 `Attempt.durationMs` + `onEvent` 流；`run/rerun --verbose` 实测边跑边打印并给出 slowest |
-| 19 | 场景表达力：并行争抢（barrier）、有界重试（retry）已支持；条件分支未实现 | ◐ | barrier 早已支持；retry 见 §3.3 规则 19（协议 1.0 内可选字段）；`when` 条件分支的设计草案在场景指南 §4.4 与 §11.2 排队 |
+| 19 | 场景表达力：并行争抢（barrier）、有界重试（retry）、条件步骤（when） | ✅ | barrier 早已支持；retry 见规则 19；`when` 于五轮随场景/结果 **1.0 → 1.1 升版**落地（规则 22，语义：不成立 ⇒ skipped、无法判定 ⇒ blocked），示例场景 `booking-conditional-skip` 纳入矩阵与标注案例集 |
 
 **结论（诚实版）**：1–10 已达「可复现的证据链」标准；11–12 缺环境/托管运行号；13–15 缺**外部输入**（外部项目、macOS、阶段 4 功能）——这些不是再写几行代码就能变绿的，所以「完美」在当前能力边界内 = 「1–10 持续为 ✅ 且任何一次改动都重跑全链」，而 13–15 属于需要你提供资源才能推进的项。
 
@@ -486,3 +487,20 @@ CLI（已有）／工作台／MCP／CI
 **四轮实测**：`npm run verify` 137/137；`positive-negative-matrix` 19/19（含 retry 后的复跑：`rc-mv29u38h-c3f4ce04` → rerun `rc-mv29x5ef-3475576f`，`previous=passed now=passed`）；`blocked-case` PASS；`tri-entry-consistency` 三入口一致；`external-agent-loop` OK。
 
 **诚实边界**：`diagnostic-benchmark` 与 `serial-stability` 在本轮场景加了 `retry` 之后的**复跑被放到后台执行，未观测到结果**（retry 只在 `outcome=error` 时触发，正常路径不重试，故预期不变；上一次完整记录为 12/12 与 10/10）。`npm run accept` 的完整一次性运行仍未跑完一遍。
+
+### A.10 2026-10-10 五轮：场景/结果升版 1.1 —— 条件步骤 `when`
+
+**动机**：四轮把「条件分支」明确列为**需要升版**的项（不做半成品）。五轮按 `docs/protocol-reference.md` §6 的模板把它一次性做完，并重跑整条证据链。
+
+| 层次 | 改动 | 关键点 |
+| --- | --- | --- |
+| 版本 | `SCENARIO_VERSION` / `RESULT_VERSION` → `1.1`；新增 `SUPPORTED_SCENARIO_VERSIONS = ["1.0","1.1"]`、`isSupportedScenarioVersion()`、`scenarioVersionAtLeast()`；`exit-codes.ts` 里重复的手写版本表改为 `ALL_VERSIONS` 别名（消除漂移） | 旧 1.0 文档仍可执行，语义不变 |
+| 场景 | `Step.when` + `StepCondition`；`ASSERT_OPS` 提取为单一来源（断言与条件共用词汇）；校验：1.0 文档禁 `when`、`when.observer` 必须已声明、`op/value/expected` 配对规则与断言一致、barrier 步骤禁 `when` | 全部在**运行前**拒绝（exit 64） |
+| 内核 | 版本门禁改为「声明值受支持 + 适配器清单覆盖它」；`when` 求值：`observe()` 读已声明观察器 → 用断言求值器判定 → 证据过同一道核对闸门 → 记 `when` 事件；**不成立 ⇒ `skipped`**（不执行、不 blocked、不当成功）；**无法判定 ⇒ blocked**（stage `when`）；`barrier + when` 拒绝 | 内核是第二道闸门，即使拿到未校验对象也不执行半成品语义 |
+| 结果 | `AttemptOutcome` 增 `skipped`（validator 同步）；`explainResult()` 列出被跳过的步骤 | 跳过必须可见，不能被当成成功 |
+| 契约 | 适配器清单 `scenarioVersion` → `1.1`；SDK 一致性套件改为「覆盖当前版本」判断；CLI `check` 与 MCP `rc_check` 共用 `isSupportedScenarioVersion()` | 四处判断口径统一 |
+| 场景与证据 | 新场景 `scenarios/booking-conditional-skip.json`（两个 holder 占满容量 → 条件不成立 → 两个步骤 skipped；`bookings` 仍为 2、退出码 0）加入矩阵与标注案例集；6 个既有场景升到 1.1（语义不变） | 条件步骤有端到端证据，不只是单测 |
+
+**五轮实测**：`npm run verify` **148/148**；`positive-negative-matrix` **21/21**（新增 check/run 各一条条件步骤用例）；`diagnostic-benchmark` **13/13**（新增条件步骤案例，漏报 0、误报 0）；`tri-entry-consistency` 三入口一致；`blocked-case` PASS；`external-agent-loop` OK。
+
+**诚实边界**：`serial-stability` 未在五轮重跑（上一次 10/10；五轮只改了条件步骤与版本字段，不改既有场景语义，矩阵与基准已覆盖全部 7 个场景的正确实现与故障归因）；`npm run accept` 的一次性完整运行仍未跑完一遍；CI 托管 Runner 运行号、≥3 个外部项目、macOS 仍未取到。

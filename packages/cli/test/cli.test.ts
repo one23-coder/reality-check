@@ -183,7 +183,7 @@ describe("export command", () => {
         path.join(runDir, "result.json"),
         JSON.stringify(
           {
-            protocol: { result: "1.0" },
+            protocol: { result: "1.1" },
             runId,
             scenarioId: "booking-normal",
             seed: 7,

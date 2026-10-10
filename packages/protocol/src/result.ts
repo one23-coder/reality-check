@@ -90,8 +90,11 @@ export interface EnvSummary {
 
 /** How a step ended. `rejected` / `no-nav` are the app's honest answers to a
  * step that DID execute (business information); `error` means the step could
- * not be executed at all (方案 §3.3 规则 17 ⇒ 内核判 blocked)。 */
-export type AttemptOutcome = "completed" | "rejected" | "no-nav" | "error";
+ * not be executed at all (方案 §3.3 规则 17 ⇒ 内核判 blocked)；`skipped` means a
+ * conditional step's condition did not hold, so the step was deliberately not
+ * executed (场景 1.1, 规则 22) — it is neither a failure nor a success and must
+ * stay visible in the record. */
+export type AttemptOutcome = "completed" | "rejected" | "no-nav" | "error" | "skipped";
 
 export interface Attempt {
   stepId: string;
@@ -187,7 +190,13 @@ export const resultV: V<RunResult> = vObject<RunResult>({
           stepId: vString,
           actor: vString,
           op: vString,
-          outcome: vEnum<Attempt["outcome"]>(["completed", "rejected", "no-nav", "error"]),
+          outcome: vEnum<Attempt["outcome"]>([
+            "completed",
+            "rejected",
+            "no-nav",
+            "error",
+            "skipped",
+          ]),
         },
         optional: {
           httpStatus: vInt({ min: 100, max: 599 }),

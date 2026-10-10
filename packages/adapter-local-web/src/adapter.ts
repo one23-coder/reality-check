@@ -159,7 +159,9 @@ export class LocalWebAdapter {
       protocol: { manifest: "1.0" },
       adapterId: "adapter-local-web",
       adapterVersion: ADAPTER_VERSION,
-      scenarioVersion: "1.0",
+      // Serves 1.1 too: 1.1 only adds optional `when` steps and the `skipped`
+      // outcome, both implemented by this adapter's kernel-side contract.
+      scenarioVersion: "1.1",
       supportedOps: [...SUPPORTED_OPS],
       supportedAssertions: [...SUPPORTED_ASSERTIONS],
       observedTables: [...OBSERVED_TABLES],

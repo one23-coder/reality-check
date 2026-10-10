@@ -10,7 +10,7 @@ import type { MissingEvidenceType, RunResult } from "../src/result.js";
 
 function resultWithGaps(gaps: string[]): RunResult {
   return {
-    protocol: { result: "1.0" },
+    protocol: { result: "1.1" },
     runId: "rc-test",
     scenarioId: "s1",
     scenarioSha256: "deadbeef",

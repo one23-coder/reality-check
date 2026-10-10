@@ -1,0 +1,117 @@
+{
+  "protocol": { "scenario": "1.1" },
+  "id": "booking-conditional-skip",
+  "name": "条件步骤（条件不成立则跳过）",
+  "description": "场景 1.1 的条件步骤：两个 holder 占满课程容量 2（规则 7），一个「仅在还有名额时才报名」的步骤用 when 绑定 capacity-left > 0 —— 此时剩余名额为 0，条件不成立，该步**不执行**并记为 skipped（既不是失败也不是通过）。正确实现：bookings 保持 2 条、跳过步骤出现在时间线与报告里、退出码 0。反例：若把 skipped 当成失败（或悄悄执行该步）都会让结论偏离 0/2 的期望。",
+  "app": "booking-app",
+  "seed": 29,
+  "roles": [
+    {
+      "id": "holder",
+      "account": {
+        "username": "holder_rc",
+        "password": "pw-holder"
+      },
+      "seedRole": "holder"
+    },
+    {
+      "id": "holder2",
+      "account": {
+        "username": "holder2_rc",
+        "password": "pw-holder2"
+      },
+      "seedRole": "holder"
+    },
+    {
+      "id": "late",
+      "account": {
+        "username": "late_rc",
+        "password": "pw-late"
+      },
+      "seedRole": "none"
+    }
+  ],
+  "steps": [
+    {
+      "id": "late-login",
+      "actor": "late",
+      "op": "login",
+      "params": {
+        "username": "late_rc",
+        "password": "pw-late"
+      }
+    },
+    {
+      "id": "late-nav-book",
+      "actor": "late",
+      "op": "navigate",
+      "params": {
+        "path": "/book?course=course-1"
+      },
+      "when": {
+        "observer": "capacity-left",
+        "op": "gt",
+        "value": 0
+      }
+    },
+    {
+      "id": "late-submit-booking",
+      "actor": "late",
+      "op": "submit",
+      "when": {
+        "observer": "capacity-left",
+        "op": "gt",
+        "value": 0
+      }
+    }
+  ],
+  "observers": [
+    {
+      "id": "booking-count",
+      "sql": "SELECT COUNT(*) AS n FROM bookings",
+      "tables": [
+        "bookings"
+      ],
+      "expectColumns": [
+        "n"
+      ]
+    },
+    {
+      "id": "capacity-left",
+      "sql": "SELECT capacity - (SELECT COUNT(*) FROM bookings WHERE bookings.course_id = courses.id) AS left FROM courses WHERE id = 'course-1'",
+      "tables": [
+        "courses",
+        "bookings"
+      ],
+      "expectColumns": [
+        "left"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "capacity-untouched",
+      "rule": "capacity-not-exceeded",
+      "observer": "capacity-left",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "id": "no-extra-booking",
+      "rule": "booking-recorded",
+      "observer": "booking-count",
+      "op": "eq",
+      "value": 2
+    }
+  ],
+  "rules": [
+    {
+      "id": "booking-recorded",
+      "description": "条件不成立时不得产生新订单：bookings 恰好 2 条（两个 holder 的占位）"
+    },
+    {
+      "id": "capacity-not-exceeded",
+      "description": "名额守恒：capacity-left >= 0（被跳过的步骤不得改动名额）"
+    }
+  ]
+}

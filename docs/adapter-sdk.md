@@ -83,7 +83,7 @@ interface AdapterManifest {
   protocol: { manifest: "1.0" };     // 固定 "1.0"（MANIFEST_VERSION）
   adapterId: string;                 // npm 包名或稳定标识
   adapterVersion: string;            // 你的版本号
-  scenarioVersion: string;           // 必须是 "1.0"（SCENARIO_VERSION）
+  scenarioVersion: string;           // 必须覆盖当前 SCENARIO_VERSION（现在是 "1.1"；声明 "1.0" 的适配器遇到 1.1 场景会被内核拒绝）
   supportedOps: string[];            // 能执行的场景步骤 op（非空）
   supportedAssertions: string[];     // 能判定的断言 op
   observedTables: string[];          // 观察器可读的表白名单（非空）
@@ -173,7 +173,7 @@ console.log(report.passed, JSON.stringify(report, null, 2));
 
 | 检查 | 验证什么 |
 | --- | --- |
-| `manifest-valid` | `validateManifest` 通过；`scenarioVersion === "1.0"`；`supportedOps` 非空；`evidenceKinds` 含文档下限（sql-dump + page-text）；每个观察器的 SQL 与声明表都在 `observedTables` 白名单内 |
+| `manifest-valid` | `validateManifest` 通过；`scenarioVersion` 覆盖当前 `SCENARIO_VERSION`；`supportedOps` 非空；`evidenceKinds` 含文档下限（sql-dump + page-text）；每个观察器的 SQL 与声明表都在 `observedTables` 白名单内 |
 | `env-lifecycle` | `setupEnv` 达到健康 `baseUrl`；`teardown` 返回 ≥1 个被清理路径；第二次 `teardown` 幂等不抛 |
 | `evidence-on-disk` | 对声明的**每个** `evidenceKinds` 类型，`captureEvidence` 落盘的文件字节哈希等于 `EvidenceRef.sha256`（铁律 3，专抓占位证据）。唯一豁免：抛错原因恰为 "no such table" 且适配器声明的 `observedTables` 确有本应用库中不存在的表（声明超集）时，记为 `excused` 写入 `detail`——ref 指向不存在的文件或哈希不符则**无条件失败** |
 | `fresh-connection-observation` | 注册 2 个角色；若 `supportedOps` 允许则走一个最小导航步骤；从**第二条连接**越界写库后，下一次 `observe()` 必须看见变化（规则 1）；越白名单的观察器 SQL 必须被拒绝 |
@@ -206,7 +206,7 @@ export function createMyAdapter(appPath: string): LocalWebAdapterV1 {
       return {
         protocol: { manifest: "1.0" },
         adapterId: "my-adapter", adapterVersion: "0.1.0",
-        scenarioVersion: "1.0",
+        scenarioVersion: "1.1",
         supportedOps: ["navigate", "register", "login", "fill", "click", "submit", "wait", "barrier"],
         supportedAssertions: ["eq", "ne", "gt", "gte", "lt", "lte", "countEq"],
         observedTables: ["notes"],

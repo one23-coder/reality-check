@@ -4,8 +4,9 @@
   "purpose": "诊断能力评估用的**预先标注**案例集（方案 §6 验收合格判定：不用自评代替，公开案例范围与误报样本）。标签来自 fixture 的既定语义（正确实现 / 各故障开关），在跑之前就冻结；脚本只负责比对，不参与判定。",
   "scope": [
     "两个自带参考应用：booking-app（course-1 容量 2）、exam-seat-app（exam-1 容量 2）",
-    "6 个场景 × 正确实现，以及每个故障开关在其对应场景上的注入",
+    "场景 × 正确实现，以及每个故障开关在其对应场景上的注入",
     "故障开关：overbooking | cancel-keeps-slot | cancel-keeps-seat | waitlist-order-wrong",
+    "场景 1.1 条件步骤：条件不成立时该步 skipped（既非失败也非通过），本案例集用一个条件不成立的场景验证「跳过不改判、也不静默执行」",
     "不含：真实线上应用、并发时序抖动、网络异常、多进程竞争（这些不在本案例集范围内）"
   ],
   "labeling": {
@@ -67,6 +68,16 @@
       "exitCode": 1,
       "violatedRules": ["waitlist-declared-order"],
       "cleanRules": ["cancel-releases-slot"]
+    },
+    {
+      "id": "booking-conditional-skip",
+      "app": "booking-app",
+      "scenario": "scenarios/booking-conditional-skip.json",
+      "fault": null,
+      "exitCode": 0,
+      "violatedRules": [],
+      "cleanRules": ["booking-recorded", "capacity-not-exceeded"],
+      "note": "场景 1.1 条件步骤：when 条件不成立 ⇒ 该步 skipped。正确实现的判据是「条件不成立时不产生新订单、名额不变」，且 skipped 不得被当成失败（那会变成 exit 1）也不得悄悄执行（那会变成 3 条订单 / 负名额）。"
     },
     {
       "id": "exam-normal-correct",

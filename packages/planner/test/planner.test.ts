@@ -8,7 +8,7 @@ import type { Scenario } from "@rc/protocol";
 
 function mkScenario(id: string): Scenario {
   return {
-    protocol: { scenario: "1.0" },
+    protocol: { scenario: "1.1" },
     id,
     name: id,
     description: `scenario ${id}`,

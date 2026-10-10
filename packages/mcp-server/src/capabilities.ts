@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import {
   SCENARIO_VERSION,
+  isSupportedScenarioVersion,
   parseJsonStrict,
   validateScenario,
   type AdapterManifest,
@@ -52,7 +53,7 @@ export function loadScenarioFile(scenarioPath: string): Scenario {
 /** Same checks as the kernel's pre-run gate and CLI check; kept in sync by
  * construction (both descend from 方案 §9 结构校验 → 适配能力检查). */
 export function checkCapabilities(scenario: Scenario, manifest: AdapterManifest): void {
-  if (scenario.protocol.scenario !== SCENARIO_VERSION) {
+  if (!isSupportedScenarioVersion(String(scenario.protocol.scenario))) {
     throw new ToolError(
       `scenario protocol ${String(scenario.protocol.scenario)} not supported (expected ${SCENARIO_VERSION})`,
     );

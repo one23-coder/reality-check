@@ -4,8 +4,8 @@
 
 | 协议 | 版本常量 | 值 | 定义在 | 生产方 → 消费方 |
 | --- | --- | --- | --- | --- |
-| 场景描述 | `SCENARIO_VERSION` | `1.0` | `scenario.ts` | 人/规划器 → 内核 |
-| 结果 | `RESULT_VERSION` | `1.0` | `result.ts` | 内核 → CLI/工作台/MCP/报告 |
+| 场景描述 | `SCENARIO_VERSION` | `1.1`（内核同时接受 `1.0`，见 `SUPPORTED_SCENARIO_VERSIONS`） | `scenario.ts` | 人/规划器 → 内核 |
+| 结果 | `RESULT_VERSION` | `1.1` | `result.ts` | 内核 → CLI/工作台/MCP/报告 |
 | 适配清单 | `MANIFEST_VERSION` | `1.0` | `manifest.ts` | 适配器 → 内核 |
 | 适配接口 | `ADAPTER_IFACE_VERSION` | `1.0` | `core/src/adapter.ts` | 内核 ↔ 适配器 |
 | 运行产物 | `ARTIFACTS_VERSION` | `1.0` | `core/src/artifacts.ts` | 内核 → 磁盘/报告 |
@@ -13,26 +13,27 @@
 
 ---
 
-## 1. 场景描述 1.0（`scenario.ts`）
+## 1. 场景描述 1.1（`scenario.ts`）
 
 ```
-Scenario { protocol{scenario}, id, name, description, app, seed,
+Scenario { protocol{scenario:"1.0"|"1.1"}, id, name, description, app, seed,
            roles[Role], steps[Step], observers[Observer], assertions[Assertion], rules[Rule] }
 
-Role       { id, account{username,password}, seedRole: "holder"|"none"|"waitlisted", attrs? }
-Step       { id, actor, op: StepOp, params?, barrier?, retry? }
-StepRetry  { attempts: 1..5, on?: AttemptOutcome[] }        // on 默认 ["error"]
-Observer   { id, sql, tables[≥1], expectColumns[≥1] }
-Assertion  { id, rule, observer, op: AssertOp, value?, expected? }
-Rule       { id, description }
+Role         { id, account{username,password}, seedRole: "holder"|"none"|"waitlisted", attrs? }
+Step         { id, actor, op: StepOp, params?, barrier?, retry?, when? }   // when 需要 1.1
+StepRetry    { attempts: 1..5, on?: AttemptOutcome[] }        // on 默认 ["error"]
+StepCondition{ observer, op: AssertOp, value?, expected? }    // observer 必须已声明
+Observer     { id, sql, tables[≥1], expectColumns[≥1] }
+Assertion    { id, rule, observer, op: AssertOp, value?, expected? }
+Rule         { id, description }
 ```
 
 `StepOp` = `navigate | register | login | fill | click | submit | wait | barrier`
-`AssertOp` = `eq | ne | gt | gte | lt | lte | countEq | eqStr`
+`AssertOp` = `eq | ne | gt | gte | lt | lte | countEq | eqStr`（`ASSERT_OPS`，条件步骤复用同一套词汇）
 
-跨引用校验（`validateScenario`）：步骤 `actor` 必须是已声明角色；断言 `observer`/`rule` 必须存在；`eqStr` 必须有 `expected` 且禁 `value`，其它 op 反之；`barrier` 步骤必须成组（≥2）；各类 id 不得重复；字段名拼错、缺必填、多未知字段一律拒绝（fail closed）。
+跨引用校验（`validateScenario`）：步骤 `actor` 必须是已声明角色；断言 `observer`/`rule` 必须存在；`eqStr` 必须有 `expected` 且禁 `value`，其它 op 反之；`barrier` 步骤必须成组（≥2）；**`when.observer` 必须已声明、`when` 不得出现在 barrier 步骤、`when` 不得出现在 1.0 文档**；各类 id 不得重复；字段名拼错、缺必填、多未知字段一律拒绝（fail closed）。
 
-## 2. 结果 1.0（`result.ts`）
+## 2. 结果 1.1（`result.ts`）
 
 ```
 RunResult { protocol{result}, runId, scenarioId, scenarioSha256, seed, startedAt, finishedAt,
@@ -42,7 +43,8 @@ RunResult { protocol{result}, runId, scenarioId, scenarioSha256, seed, startedAt
 
 RuleEvaluation { ruleId, assertionId, verdict: "held"|"violated"|"not-evaluated"|"inconclusive",
                  observed, expected, evidenceRefs[EvidenceRef], missingEvidenceTypes? }
-Attempt        { stepId, actor, op, outcome: "completed"|"rejected"|"no-nav"|"error",
+Attempt        { stepId, actor, op,
+                 outcome: "completed"|"rejected"|"no-nav"|"error"|"skipped",   // skipped = 条件不成立，未执行
                  httpStatus?, detail?, evidence?[EvidenceRef], durationMs?, attemptIndex? }
 TimelineEvent  { seq, t, kind, actor?, detail{}, causation? }
 EvidenceRef    { kind: EvidenceKind, file, seq, actor?, sha256 }
@@ -101,8 +103,14 @@ runs/<runId>/
 
 ## 6. 兼容性策略（重要）
 
-- **1.0 内的可选字段扩展是允许的**（旧场景/旧结果照常解析）：例如 `Attempt.evidence`、`Attempt.durationMs`、`Step.retry`、`missingEvidenceTypes` 的类型收紧，都属这一类，已在方案 §3.3 / 附录 A 记录理由。前提是：新增字段可选、旧生产者不产出也合法、收紧只排除「本来就不该出现」的取值。
-- **需要升版（1.1）的变更**：改变既有字段语义、新增必填字段、引入会改变判定结果的新语义（例如条件分支 `when` + `skipped` outcome）。升版时必须同时更新：内核版本门禁、场景校验器、适配器清单契约、`ALL_VERSIONS`、以及全部场景与正反例矩阵。
+- **同一版本内的可选字段扩展是允许的**（旧文档照常解析）：例如 `Attempt.evidence`、`Attempt.durationMs`、`Attempt.attemptIndex`、`Step.retry`、`missingEvidenceTypes` 的类型收紧，都属这一类，已在方案 §3.3 / 附录 A 记录理由。前提是：新增字段可选、旧生产者不产出也合法、收紧只排除「本来就不该出现」的取值。
+- **已完成的一次升版：场景/结果 1.0 → 1.1**（2026-10-10，条件步骤 `when` + `skipped` outcome）。做法可作为下次升版的模板：
+  1. `versions.ts` 里把 `SCENARIO_VERSION` 提到新值，并用 `SUPPORTED_SCENARIO_VERSIONS` 保留旧值；
+  2. 校验器按声明版本分别把关（1.0 出现 `when` 直接拒绝，不猜语义）；
+  3. 内核版本门禁改为「声明值受支持 + 适配器清单声明的版本不低于它」（`scenarioVersionAtLeast`）；
+  4. 适配器清单、SDK 一致性套件、CLI `check`、MCP `rc_check` 全部改用同一套判断；
+  5. 全部场景、正反例矩阵、标注案例集、`docs/` 同步，并重跑证据链。
+- **需要下一次升版（1.2+）的变更**：改变既有字段语义、新增必填字段、引入会改变判定结果的新语义（例如循环体或条件分支的组合表达式）。
 - **不做的事**：不允许静默兼容（比如「没声明就当默认」）。未知字段一律拒绝，版本不匹配在运行前拒绝。
 
 ## 7. 退出码

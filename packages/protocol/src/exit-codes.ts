@@ -1,4 +1,5 @@
 /** Exit codes and verdict semantics (方案 §10 结果语义). */
+import { ALL_VERSIONS } from "./versions.js";
 
 export type Verdict = "passed" | "failed" | "inconclusive" | "blocked";
 
@@ -20,13 +21,8 @@ export const EXIT_DESCRIPTION: Record<ExitCode, string> = {
   70: "工具自身异常：内核或适配器内部错误",
 };
 
-export const PROTOCOL_VERSIONS = {
-  scenario: "1.0",
-  result: "1.0",
-  manifest: "1.0",
-  adapterInterface: "1.0",
-  runArtifacts: "1.0",
-  tools: "0.1.0",
-} as const;
+/** Kept as an alias of ALL_VERSIONS: two hand-maintained version tables was a
+ * drift hazard (it already had 1.0 hard-coded while versions.ts moved on). */
+export const PROTOCOL_VERSIONS = ALL_VERSIONS;
 
 export type ProtocolVersionKey = keyof typeof PROTOCOL_VERSIONS;

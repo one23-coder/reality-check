@@ -16,11 +16,13 @@ import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import {
   STEP_OPS,
+  explainResult,
   type AdapterManifest,
   type Attempt,
   type EnvSummary,
   type EvidenceRef,
   type Scenario,
+  type StepCondition,
 } from "@rc/protocol";
 import type { LocalWebAdapterV1, ObserverReading, StepContext } from "../src/adapter.js";
 import { executeScenario } from "../src/engine.js";
@@ -45,7 +47,7 @@ afterEach(async () => {
 
 function scenario(over: Partial<Scenario> = {}): Scenario {
   return {
-    protocol: { scenario: "1.0" },
+    protocol: { scenario: "1.1" },
     id: "fake-scenario",
     name: "fake",
     description: "kernel-level fake adapter scenario",
@@ -111,7 +113,7 @@ class FakeAdapter implements LocalWebAdapterV1 {
       protocol: { manifest: "1.0" },
       adapterId: "fake-adapter",
       adapterVersion: "0.0.1",
-      scenarioVersion: "1.0",
+      scenarioVersion: "1.1",
       supportedOps: [...STEP_OPS],
       supportedAssertions: ["eq", "ne", "gt", "gte", "lt", "lte", "countEq", "eqStr"],
       observedTables: ["bookings", "waitlist"],
@@ -387,6 +389,80 @@ describe("步骤执行失败 ⇒ blocked，绝不产出业务结论 (方案 §10
     const result = await executeScenario(scenario(), adapter, { runsRoot });
     assert.equal(result.verdict, "passed");
     assert.equal(result.attempts[0]?.outcome, "rejected");
+  });
+});
+
+describe("条件步骤 when (场景 1.1, 方案 §3.3 规则 22)", () => {
+  const guarded = (when: StepCondition | undefined): Partial<Scenario> => ({
+    steps: [
+      { id: "s1", actor: "alice", op: "navigate", params: { path: "/" }, ...(when ? { when } : {}) },
+    ],
+  });
+
+  it("skips the step when the condition does not hold, and says so in the timeline", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []));
+    const result = await executeScenario(
+      scenario(guarded({ observer: "booking-count", op: "lt", value: 1 })),
+      adapter,
+      { runsRoot },
+    );
+    // The guarded step never ran — but the assertions still speak about the
+    // business state, and the skip is neither a failure nor a success.
+    assert.equal(result.attempts[0]?.outcome, "skipped");
+    assert.equal(result.verdict, "passed");
+    const when = result.timeline.find((e) => e.kind === "when");
+    assert.ok(when, "the decision must be recorded");
+    assert.equal(when.detail["decision"], "skip");
+    assert.equal(when.detail["observed"], 2);
+    assert.match(explainResult(result).join("\n"), /跳过步骤/);
+  });
+
+  it("runs the step when the condition holds", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []));
+    const result = await executeScenario(
+      scenario(guarded({ observer: "booking-count", op: "gte", value: 2 })),
+      adapter,
+      { runsRoot },
+    );
+    assert.equal(result.attempts[0]?.outcome, "completed");
+    assert.equal(result.timeline.find((e) => e.kind === "when")?.detail["decision"], "run");
+  });
+
+  it("blocks instead of guessing when the condition cannot be decided", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([], []));
+    const result = await executeScenario(
+      scenario(guarded({ observer: "booking-count", op: "gte", value: 2 })),
+      adapter,
+      { runsRoot },
+    );
+    assert.equal(result.verdict, "blocked");
+    assert.equal(result.attempts.length, 0, "the step must not run on a guess");
+    const blocked = result.timeline.find((e) => e.kind === "blocked");
+    assert.equal(blocked?.detail["stage"], "when");
+    assert.match(String(blocked?.detail["error"]), /inconclusive/);
+  });
+
+  it("refuses a conditional barrier step before creating a run dir", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []));
+    await assert.rejects(
+      () =>
+        executeScenario(
+          scenario({
+            steps: [
+              { id: "b1", actor: "alice", op: "submit", barrier: true, when: { observer: "booking-count", op: "gte", value: 2 } },
+              { id: "b2", actor: "alice", op: "submit", barrier: true },
+            ],
+          }),
+          adapter,
+          { runsRoot },
+        ),
+      isRunError,
+    );
+    assert.deepEqual(await readdir(runsRoot), []);
   });
 });
 

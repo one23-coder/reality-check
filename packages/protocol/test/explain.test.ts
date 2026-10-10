@@ -7,7 +7,7 @@ import type { Attempt, RunResult, TimelineEvent } from "../src/result.js";
 
 function result(over: Partial<RunResult> = {}): RunResult {
   return {
-    protocol: { result: "1.0" },
+    protocol: { result: "1.1" },
     runId: "rc-test",
     scenarioId: "s1",
     scenarioSha256: "deadbeef",

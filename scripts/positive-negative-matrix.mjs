@@ -21,6 +21,7 @@ const CASES = [
   ["check booking-normal", ["check", "scenarios/booking-normal.json"], 0],
   ["check booking-contend", ["check", "scenarios/booking-contend.json"], 0],
   ["check booking-cancel-waitlist", ["check", "scenarios/booking-cancel-waitlist.json"], 0],
+  ["check booking-conditional-skip", ["check", "scenarios/booking-conditional-skip.json"], 0],
   ["check exam-normal", ["check", "scenarios/exam-normal.json", "--config", ".reality-check.exam.json"], 0],
   ["check exam-contend", ["check", "scenarios/exam-contend.json", "--config", ".reality-check.exam.json"], 0],
   [
@@ -32,6 +33,13 @@ const CASES = [
   ["booking-normal (correct)", ["run", "scenarios/booking-normal.json"], 0],
   ["booking-contend (correct)", ["run", "scenarios/booking-contend.json"], 0],
   ["booking-cancel-waitlist (correct)", ["run", "scenarios/booking-cancel-waitlist.json"], 0],
+  // ---- 场景 1.1 条件步骤：条件不成立 ⇒ skipped（既非失败也非通过），判定不变
+  [
+    "booking-conditional-skip (when false -> skipped)",
+    ["run", "scenarios/booking-conditional-skip.json"],
+    0,
+    ["held booking-recorded", "held capacity-not-exceeded"],
+  ],
   // ---- booking-app 故障开关：必须归因到对应规则
   [
     "booking-contend + overbooking",

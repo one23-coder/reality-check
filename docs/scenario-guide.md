@@ -8,7 +8,7 @@
 
 ```json
 {
-  "protocol": { "scenario": "1.0" },
+  "protocol": { "scenario": "1.1" },
   "id": "my-app-normal",
   "name": "正常下单",
   "description": "一个新用户下单成功后，订单恰好 1 条、库存归 0。正确实现退出码 0。",
@@ -49,7 +49,9 @@ node packages/cli/dist/src/main.js run   scenarios/my-app-normal.json --verbose
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `protocol.scenario` | ✅ | 目前只接受 `"1.0"`；不匹配在运行前拒绝（exit 64） |
+| `protocol.scenario` | ✅ | `"1.1"`（当前）或 `"1.0"`（旧文档仍可执行）；其它值在运行前拒绝（exit 64） |
+| `steps[].when` | ❌ | 条件步骤，**需要 1.1**（见 §4.4）；1.0 文档里出现会被拒绝 |
+| `steps[].retry` | ❌ | 有界重试（见 §4.3），1.0/1.1 都可用 |
 | `id` / `name` / `description` | ✅ | `id` 用于 `plan` 的关键词匹配与报告标题；`description` 会进报告，**把判定口径写清楚** |
 | `app` | ✅ | 自由文本，仅作说明与报告展示（真正被测入口来自 `.reality-check.json` 的 `app.entry`） |
 | `seed` | ✅ | 非负整数；`rerun` 用同种子重建初始状态 |
@@ -84,6 +86,7 @@ node packages/cli/dist/src/main.js run   scenarios/my-app-normal.json --verbose
 | `completed` | 动作执行完成 | 继续 |
 | `rejected` / `no-nav` | 应用对**已执行**动作的诚实回答（业务信息） | 照常进入断言 |
 | `error` | 这一步**根本没执行**（选择器不存在、导航超时、浏览器断开） | **整轮判 blocked（exit 3）**，并点名步骤 |
+| `skipped` | 条件步骤的 `when` 不成立，**故意不执行**（场景 1.1） | 既非失败也非通过；留在时间线与报告里，判定仍由断言承担 |
 
 > 为什么 `error` 必须判 blocked：此时断言是在「未被触碰的状态」上求值，极端情况下初始状态恰好满足期望就会**假通过**——那是对一次并未发生的运行下结论（方案 §3.3 规则 17）。
 
@@ -116,16 +119,22 @@ node packages/cli/dist/src/main.js run   scenarios/my-app-normal.json --verbose
 - 因此重试可以让一次抖动变成 blocked 之外的成功，但**永远不会**把业务失败洗成通过（`rejected` 默认不触发重试）。
 - `barrier` + `retry` 同时声明会被拒绝：并发组没有「逐步骤重试」的语义。
 
-### 4.4 条件分支（未实现，设计草案）
-当前没有 `when`/`if`。我们不在 1.0 里塞半成品，理由是它会改变场景语义、需要协议升版（1.1）并重跑全部正反例矩阵。已确定的提案方向：
+### 4.4 条件步骤 `when`（场景 1.1，已实现）
 
-```jsonc
-// 提案（尚未实现，勿写入场景）
-{ "id": "maybe-cancel", "actor": "holder", "op": "submit",
-  "when": { "observer": "capacity-left", "op": "eq", "value": 0 } }
+```json
+{ "id": "late-nav-book", "actor": "late", "op": "navigate", "params": { "path": "/book?course=course-1" },
+  "when": { "observer": "capacity-left", "op": "gt", "value": 0 } }
 ```
 
-要点：条件只能引用**已声明观察器**（保持「断言主体单一口径」）；条件为假时该步骤记录为 `skipped`（新 outcome），必须在报告与时间线里可见，绝不能被当成成功；判定语义仍由断言承担。待办见方案 §11.2。
+语义（方案 §3.3 规则 22）：
+
+- 条件在**该步执行前**求值：内核用 `observe()` 读一次**已声明的观察器**（保持单一口径），并用与断言**完全相同的比较词汇**判定（`eqStr` 用 `expected`，其余用 `value`）。
+- 条件成立 ⇒ 照常执行该步；条件不成立 ⇒ 该步**不执行**，记为 `skipped`：既不是失败也不是通过，会出现在时间线（`when` 事件 + `step` 事件的 `outcome: skipped`）、`--verbose` 的步骤表、以及 `explainResult()` 的提示里。判定仍然只由断言承担。
+- 条件**无法判定**（观察器 0 行/列缺失/证据引用核对失败）⇒ 整轮判 `blocked`（exit 3），**不猜分支**：在证据不足时替用户选一条路，等于伪造结论。
+- 条件引用的观察器必须已声明；`when` 与 `barrier` 不能同步骤（并发组没有逐步骤条件语义）；`when` 需要场景声明 `1.1`（1.0 文档里使用会被校验器与内核两道拒绝）。
+- 条件的观察证据同样过「采集即落盘 + 内核逐条核对」的闸门，判定依据可回溯。
+
+完整示例见仓库里的 `scenarios/booking-conditional-skip.json`：两个 holder 占满容量后，一个「仅在还有名额时才报名」的步骤条件不成立 ⇒ 跳过，`bookings` 保持 2 条、退出码 0。
 
 ---
 

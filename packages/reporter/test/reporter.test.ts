@@ -10,7 +10,7 @@ const SCRIPT = '<script>alert("xss")</script>';
 
 function mkResult(verdict: Verdict): RunResult {
   return {
-    protocol: { result: "1.0" },
+    protocol: { result: "1.1" },
     runId: RUN_ID,
     scenarioId: "booking-contend",
     scenarioSha256: "a".repeat(64),
@@ -81,7 +81,7 @@ describe("renderJsonReport", () => {
     const parsed = JSON.parse(renderJsonReport(result, EVENTS)) as RunResult & { events: unknown[] };
     assert.equal(parsed.verdict, "failed");
     assert.equal(parsed.runId, RUN_ID);
-    assert.equal(parsed.protocol.result, "1.0");
+    assert.equal(parsed.protocol.result, "1.1");
     assert.equal(parsed.events.length, EVENTS.length);
     assert.deepEqual(parsed.ruleEvaluations, result.ruleEvaluations);
     assert.deepEqual(parsed.env, result.env);

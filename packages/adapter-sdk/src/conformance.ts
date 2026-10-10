@@ -35,6 +35,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   EVIDENCE_KINDS,
   SCENARIO_VERSION,
+  scenarioVersionAtLeast,
   validateManifest,
   type Attempt,
   type EvidenceRef,
@@ -198,8 +199,10 @@ export async function runConformanceSuite(
   // ---------------------------------------------------------------- (a) manifest
   await check("manifest-valid", async () => {
     const m = validateManifest(adapter.manifest(), "conformance:manifest");
-    if (m.scenarioVersion !== SCENARIO_VERSION) {
-      throw new Error(`scenarioVersion "${m.scenarioVersion}" !== "${SCENARIO_VERSION}"`);
+    if (!scenarioVersionAtLeast(m.scenarioVersion, SCENARIO_VERSION)) {
+      throw new Error(
+        `scenarioVersion "${m.scenarioVersion}" does not cover the current scenario version ${SCENARIO_VERSION}`,
+      );
     }
     if (m.supportedOps.length === 0) throw new Error("supportedOps is empty");
     for (const kind of ["sql-dump", "page-text"] as const) {

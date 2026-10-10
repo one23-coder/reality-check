@@ -261,7 +261,7 @@ test("rc_run with nonexistent app entry -> verdict blocked; get_result; rerun; l
         runId: string;
         verdict: string;
       };
-      assert.equal(storedResult.protocol.result, "1.0");
+      assert.equal(storedResult.protocol.result, "1.1");
       assert.equal(storedResult.runId, runId);
       assert.equal(storedResult.verdict, "blocked");
       assert.ok(Array.isArray(getPayload.events) && getPayload.events.length > 0);

@@ -1,5 +1,5 @@
 {
-  "protocol": { "scenario": "1.0" },
+  "protocol": { "scenario": "1.1" },
   "id": "exam-contend",
   "name": "争抢最后座位",
   "description": "holder 以 seedRole:\"holder\" 声明占用 1 个初始座位（内核在启动环境时把角色声明交给适配器落库，规则 7），随后两个未占用座位的账号经同步屏障同时提交预约，争抢仅剩的 1 个座位。正确实现恰有一方成功（reservations=2、seats-left=0，另一方入候补）。overbooking 故障下双方都落库（reservations=3、seats-left=-1），归因到 capacity-not-exceeded。",

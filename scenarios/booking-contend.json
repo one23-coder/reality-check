@@ -1,6 +1,6 @@
 {
   "protocol": {
-    "scenario": "1.0"
+    "scenario": "1.1"
   },
   "id": "booking-contend",
   "name": "争抢最后名额",

@@ -41,7 +41,7 @@ manifest(): AdapterManifest {
     protocol: { manifest: "1.0" },
     adapterId: "adapter-my-app",
     adapterVersion: "0.1.0",
-    scenarioVersion: "1.0",
+    scenarioVersion: "1.1",              // 必须覆盖当前 SCENARIO_VERSION（不足则内核拒绝）
     supportedOps: ["navigate", "register", "login", "fill", "click", "submit", "wait", "barrier"],
     supportedAssertions: ["eq", "ne", "gt", "gte", "lt", "lte", "countEq", "eqStr"],
     observedTables: ["orders", "accounts"],
