@@ -3,6 +3,7 @@ export * from "./versions.js";
 export * from "./exit-codes.js";
 export * from "./scenario.js";
 export * from "./result.js";
+export * from "./explain.js";
 export * from "./v.js";
 export { EVIDENCE_KINDS, validateManifest, type AdapterManifest } from "./manifest.js";
 

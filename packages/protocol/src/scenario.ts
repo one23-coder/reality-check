@@ -4,6 +4,7 @@
  * vocabulary of steps, named observers (SQL via the adapter's declared
  * observation surface), and assertions bound to business rules.
  */
+import type { AttemptOutcome } from "./result.js";
 import {
   vArray,
   vBool,
@@ -49,7 +50,22 @@ export interface Step {
   /** When true this step joins the nearest preceding barrier group and is
    * submitted concurrently with its group peers (争抢场景同步屏障). */
   barrier?: boolean;
+  /** Bounded retry (方案 §12 场景表达：循环重试). The step is executed again
+   * ONLY while the previous attempt's outcome is in `on` (default ["error"]),
+   * up to `attempts` executions in total (≤5 by validation). Every attempt is
+   * recorded separately in the timeline/attempts, and the LAST attempt decides
+   * the run's outcome — so a retry can never hide a business result, it can
+   * only absorb an infrastructure flake that is visible in the record. */
+  retry?: StepRetry;
 }
+
+export interface StepRetry {
+  attempts: number;
+  /** Outcomes that trigger another attempt. Default ["error"]. */
+  on?: AttemptOutcome[];
+}
+
+export const STEP_RETRY_MAX_ATTEMPTS = 5;
 
 export interface Observer {
   id: string;
@@ -123,7 +139,19 @@ function vUnion(value: unknown, path: string): string | number | boolean {
 
 const stepV = vObject<Step>({
   required: { id: idField, actor: vString, op: vEnum<StepOp>(STEP_OPS) },
-  optional: { params: vRecord(vUnion), barrier: vBool },
+  optional: {
+    params: vRecord(vUnion),
+    barrier: vBool,
+    retry: vObject<StepRetry>({
+      required: { attempts: vInt({ min: 1, max: STEP_RETRY_MAX_ATTEMPTS }) },
+      optional: {
+        on: vArray(
+          vEnum<AttemptOutcome>(["completed", "rejected", "no-nav", "error"]),
+          { min: 1 },
+        ),
+      },
+    }),
+  },
 });
 
 const observerV = vObject<Observer>({

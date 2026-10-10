@@ -16,6 +16,7 @@ import path from "node:path";
 import {
   EXIT_DESCRIPTION,
   VERDICT_EXIT,
+  explainResult,
   type RunResult,
   type TimelineEvent,
 } from "@rc/protocol";
@@ -146,6 +147,9 @@ async function runScenario(
       seed: result.seed,
       ...(previousRunId !== undefined ? { previousRunId } : {}),
       ruleEvaluations: ruleSummary(result),
+      // Same explanation the CLI prints (方案 §12 报错体验): the assistant does
+      // not have to reverse-engineer the timeline to know WHY a run blocked.
+      diagnostics: explainResult(result),
       runDir,
     },
   };

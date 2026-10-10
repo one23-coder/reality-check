@@ -41,7 +41,21 @@ node packages/cli/dist/src/main.js run scenarios/booking-contend.json --fault ov
 node packages/cli/dist/src/main.js rerun --run-id <runId>
 node packages/cli/dist/src/main.js export
 node packages/cli/dist/src/main.js plan "帮我测一下争抢最后一个名额"
+
+# --verbose：实时打印每步结果与耗时，并给出最慢步骤（哪一步慢/卡住一眼看到）
+node packages/cli/dist/src/main.js run scenarios/booking-normal.json --verbose
 ```
+
+## 文档
+
+| 文档 | 读者 | 内容 |
+|---|---|---|
+| [docs/scenario-guide.md](./docs/scenario-guide.md) | 写场景的人 | 场景结构、字段速查、op 语义、判定后果、并行/有界重试、常见坑、条件分支设计草案 |
+| [docs/protocol-reference.md](./docs/protocol-reference.md) | 想核对契约的人 | 六套协议的字段与不变量、磁盘布局、兼容性策略（1.0 内扩展 vs 需升版） |
+| [docs/adapter-tutorial.md](./docs/adapter-tutorial.md) | 接自己项目的人 | 从零写适配器：manifest → setupEnv(roles) → 步骤/证据 → observe → teardown → 一致性套件 → 排查表 |
+| [docs/adapter-sdk.md](./docs/adapter-sdk.md) | 适配器作者 | 契约规范与能力声明要求（教程里引用的「规范」） |
+| [Reality-Check-工程阶段方案.md](./Reality-Check-工程阶段方案.md) | 评审者 | 工程路线、不可后补的约束、§12 完成判据、附录 A 实测证据 |
+| [docs/接入耗时记录.md](./docs/接入耗时记录.md) | 接入者 | 第二个独立应用仅凭文档接入的耗时与逐条阻碍 |
 
 ## 工作台与 MCP
 

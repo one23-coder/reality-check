@@ -64,7 +64,7 @@
 | 取消候补递补 | 退出码 0，5/5 断言通过 | — | 退出码 1，✗ cancel-releases-slot、✗ waitlist-declared-order（3 断言失败） | 退出码 1，✗ waitlist-declared-order（4 断言通过不受牵连） |
 
 - **CLI 五命令**：`check`（结构校验+能力检查，六场景全过）、`run`、`rerun --run-id`（同种子重建环境重跑，实测正确版本重跑仍通过）、`export`（列出历史运行及复跑命令）、`plan`（受限规划器；无线索且无可用模型时不选任何场景，空场景目录为配置错误）。
-- **测试**：**126 项全过（2026-10-10 三轮 `npm run verify` 实测；首轮基线为 103 项中 99 通过 / 4 失败）**。三轮新增「步骤执行失败 ⇒ blocked / rejected 照常判定」两项单测。新增测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、角色声明传递、步骤证据登记与剔除、数据根台账与兜底清理、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合 + `Attempt.evidence` 校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」「证据采集失败必须留痕」「每个步骤交回可核对证据引用」三项。
+- **测试**：**137 项全过（2026-10-10 四轮 `npm run verify` 实测；首轮基线为 103 项中 99 通过 / 4 失败）**。四轮新增 `explainResult`/`slowestSteps`（协议层）、有界重试与可观测性（内核层）、blocked 具象化输出（CLI 层）等分组。新增测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、角色声明传递、步骤证据登记与剔除、数据根台账与兜底清理、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合 + `Attempt.evidence` 校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」「证据采集失败必须留痕」「每个步骤交回可核对证据引用」三项。
 - **退出码契约实测**：0（通过）、1（业务违规）、2（证据不完整降级）、3（blocked，`scripts/blocked-case.mjs` PASS）、64（配置非法，含 BOM JSON 被拒、空场景目录的 `plan`）、70（工具自身异常）。
 - **正反例配对矩阵已脚本化（2026-10-10）**：`scripts/positive-negative-matrix.mjs` 一条命令跑完 19 个用例（6 场景 `check` + booking/exam 正确实现 + 四个故障开关 + `rerun`），实测 19/19 退出码与归因规则一致，见附录 A.6。
 - **内核级保证（2026-10-10 两轮累计）**：内核逐条核对适配器交回的证据引用（存在性 + 哈希 + 路径），观察器证据失败即降级 inconclusive 并具名 `evidence-file`，步骤证据失败即剔除并具名；场景观察器 SQL 与适配器清单 SQL 必须同源（单一口径，仅空白差异被容忍）；适配器拒绝使用不属于本次运行的 db 文件；内核在启动前认领数据根并把应用库登记进台账；场景声明的 `seedRole` 由内核交给 `setupEnv` 真实兑现（见 §3.3 规则 11–16）。
@@ -99,6 +99,9 @@
 16. **内核在启动应用之前认领数据根**（2026-10-10 二轮）：`claimDataRoot(runDir/data, runId)` 写 `ownership.json`；已有内容而无所有权标记 → blocked（exit 3，绝不冒充业务结论）。适配器在 `EnvSummary.dbPath` 报告的应用库会被登记进台账，`teardown` 后由台账做第二道清理兜底。此前 `claimDataRoot` 只被单测调用，产品路径无人执行。
 17. **步骤「执行失败」不是业务结论**（2026-10-10 三轮，基准实测逼出来的）：`Attempt.outcome === "error"` 意味着这一步根本没发生，此时的业务断言在**未被触碰的状态**上求值，甚至可能因初始状态恰好满足期望而报 `passed`——那是对一次并未发生的运行下结论。因此任何 error 步骤一律 blocked（exit 3）并在 `blocked` 事件里列出步骤 id；而 `rejected` / `no-nav` 是应用对**已执行**步骤的诚实回答，属于业务信息，照常进入断言（规则 6）。
 18. **基础设施失败必须可归因**（2026-10-10 三轮）：Chromium 中途断开（实测 12 连跑中偶发 1 次）此前只会表现为一句 `page.goto: Target page, context or browser has been closed`，无法与场景缺陷区分。现在适配器监听 `disconnected`、检查 `page.isClosed()`，并把原因写进 `attempt.detail.error`（「Chromium disconnected mid-run … 环境/工具失败」）；同时用启动参数抑制后台页节流。**不做**自动恢复：重建上下文会丢登录会话，硬造成功比失败更危险。
+19. **重试是有界的、可见的、只吸收基础设施抖动**（2026-10-10 四轮）：`step.retry = { attempts: 1..5, on?: AttemptOutcome[] }`，默认只在 `error` 上重试；每次尝试都以 `step-retry` 事件留在时间线里，该步骤的 Attempt 记录 `attemptIndex` 与被测时长，判定由**最后一次**尝试决定。因此重试能把一次抖动变成成功，**永远不能**把业务失败洗成通过（`rejected`/`no-nav` 需显式写进 `on` 才会重试，而默认不写）。`barrier` + `retry` 同步骤声明在运行前拒绝——并发组没有「逐步骤重试」的语义。
+20. **报错必须自证**（2026-10-10 四轮）：非 passed/failed 的结论一律把「为什么」打印出来——blocked 的阶段、原始错误、无法执行的步骤 id 与建议；inconclusive 缺哪一类证据；并给出产物绝对路径。措辞由 protocol 的 `explainResult()` 单点提供，CLI 与 MCP 共用，避免各处口径不一。
+21. **可观测性靠事件流，不靠猜**（2026-10-10 四轮）：内核把每个 Attempt 的耗时写进 `durationMs`（含 barrier 组），并支持 `onEvent` 实时回调；CLI `--verbose` 因此能边跑边打印步骤/观察/重试，结束后给出最慢三步。时间线仍是唯一真相来源（`seq` 排序），实时流只是它的镜像。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -280,6 +283,7 @@ CLI（已有）／工作台／MCP／CI
 
 1. **CI 托管 Runner 实跑绿的记录**：把 `npm test` / 三入口 / 矩阵 / 基准的运行号写进附录 A（工作流步骤已就位，缺 GitHub Runner 执行）。
 2. **≥3 个真实外部项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况；需要外部输入，无法自证。
+3. **场景条件分支（`when`）**：设计草案见 `docs/scenario-guide.md` §4.4。这是**需要升版**的改动（新增 `skipped` outcome、改变步骤语义），必须一次做完：协议 1.1 + 版本门禁 + 校验器 + 适配器契约 + 全部场景与正反例矩阵重跑；不做半成品。
 3. ~~预先标注的正常/故障案例集评估~~ —— **已完成**：`fixtures/diagnostic-cases.json` + `scripts/diagnostic-benchmark.mjs`，12/12、漏报 0、误报 0（A.8，含一处标签修正的公开）。
 4. ~~未参与开发的编程助手闭环~~ —— **已完成**：`scripts/external-agent-loop.mjs`（仅 MCP 公开接口 + 一次应用文本编辑，A.8）。
 
@@ -299,7 +303,7 @@ CLI（已有）／工作台／MCP／CI
 
 | # | 判据（可检验） | 现状 | 证据 / 缺口 |
 | --- | --- | --- | --- |
-| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 126/126（2026-10-10 二轮） |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 137/137（2026-10-10 四轮） |
 | 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
 | 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
 | 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
@@ -314,6 +318,10 @@ CLI（已有）／工作台／MCP／CI
 | 13 | ≥3 个**真实外部项目**试用，记录耗时/发现/误报/复用 | ⬜ | 仓库内只有 2 个自带 fixture；需要外部输入，无法自证 |
 | 14 | macOS 支持经实际验证后入矩阵 | ⬜ | 需要 macOS 机器 |
 | 15 | 受控事件注入（邮件/回调）、虚拟时间、脱敏导出、安装/升级/迁移/排障文档 | ⬜ | 阶段 4 未开工的明确范围 |
+| 16 | 面向使用者的文档：场景编写指南、协议字段速查、适配器开发教程 | ✅ | `docs/scenario-guide.md`、`docs/protocol-reference.md`、`docs/adapter-tutorial.md`（README 有索引） |
+| 17 | 报错具象化：blocked/inconclusive 直接说明原因与建议、给出产物路径 | ✅ | protocol `explainResult()` 单点措辞，CLI 与 MCP 共用；cli 测试断言 blocked 输出含阶段/原因/建议/路径 |
+| 18 | 运行时可观测性：实时步骤流 + 每步耗时 + 最慢步骤 | ✅ | 内核 `Attempt.durationMs` + `onEvent` 流；`run/rerun --verbose` 实测边跑边打印并给出 slowest |
+| 19 | 场景表达力：并行争抢（barrier）、有界重试（retry）已支持；条件分支未实现 | ◐ | barrier 早已支持；retry 见 §3.3 规则 19（协议 1.0 内可选字段）；`when` 条件分支的设计草案在场景指南 §4.4 与 §11.2 排队 |
 
 **结论（诚实版）**：1–10 已达「可复现的证据链」标准；11–12 缺环境/托管运行号；13–15 缺**外部输入**（外部项目、macOS、阶段 4 功能）——这些不是再写几行代码就能变绿的，所以「完美」在当前能力边界内 = 「1–10 持续为 ✅ 且任何一次改动都重跑全链」，而 13–15 属于需要你提供资源才能推进的项。
 
@@ -461,3 +469,20 @@ CLI（已有）／工作台／MCP／CI
 **诚实边界**：`npm run accept` 的**一次性全链运行**（含 10 次串行稳定性）尚未完整跑完一遍（各门禁已分别全绿）；`acceptance.mjs` 本身只做「按顺序调用 + 汇总退出码」，不含任何判定逻辑，避免出现第二个真相来源。
 
 **同时修掉的一处「退出码说谎」**：`tri-entry-consistency.mjs` 的比对结论正确，但结束时清理临时目录在 Windows 上撞到文件锁（子进程句柄未释放）抛出 EBUSY，把成功改写成 exit 1。现抽出 `scripts/lib/child-cleanup.mjs`（等子进程退出 + 重试清理 + 清理失败只提示不改判），三入口脚本与闭环脚本共用；三入口脚本连续 3 次实测 exit 0。
+
+### A.9 2026-10-10 四轮：文档、报错体验、场景表达、可观测性
+
+**这一轮的四项诉求都来自使用者视角的评审**，逐项落地如下。
+
+| # | 诉求 | 做了什么 | 证据 / 边界 |
+| --- | --- | --- | --- |
+| 1 | 文档体系补全 | 新增 `docs/scenario-guide.md`（场景编写指南：字段速查、op 语义、判定后果、并行/重试、8 条真实踩过的坑、调试套路）、`docs/protocol-reference.md`（六套协议字段与不变量、磁盘布局、**兼容性策略**：1.0 内可选字段扩展 vs 必须升版的变更）、`docs/adapter-tutorial.md`（从零写适配器：manifest → setupEnv(roles) → 步骤/证据 → observe → teardown → 一致性套件 → 排查表）；README 加文档索引 | 三份文档与代码逐项核对（版本号取自 `ALL_VERSIONS`，SDK 电池取自 `adapter-sdk/src/index.ts` 导出） |
+| 2 | 报错体验友好 | protocol 新增 `explainResult(result)` / `slowestSteps(result)` 作为**单点措辞**；CLI `run`/`rerun` 在非 passed/failed 时打印：blocked 的阶段 + 原始错误 + 无法执行的步骤 + 可操作建议（setupEnv 提示查入口/依赖/端口，claimDataRoot 提示 §10 所有权），inconclusive 列出缺哪类证据，并给出 `result.json`/`report.html` 绝对路径；MCP 的 rc_run/rc_rerun payload 同步带 `diagnostics` | 实测 blocked 输出含「blocked at setupEnv …」「（应用没能起来：检查 app.entry 指向的入口、依赖是否安装、端口是否被占用）」「full record: …\\result.json」；新增 cli 测试断言这段输出 |
+| 3 | 场景表达力 | **有界重试 `step.retry`** 落地（规则 19）：`attempts` 1–5、`on` 默认 `["error"]`、每次尝试以 `step-retry` 事件可见、判定由最后一次尝试决定、`barrier + retry` 运行前拒绝；两个取消场景的 cancel 步骤实际用上（`attempts: 2, on: ["error"]`），正好覆盖三轮发现的 Chromium 偶发断开。**并行**早已由 `barrier` 组支持（文档补全）。**条件分支 `when` 未实现**：需要协议升版（新增 `skipped` outcome）并重跑全部矩阵，属明确不做半成品的项，设计草案见场景指南 §4.4 | 内核测试：重试后恢复 ⇒ passed 且 `attemptIndex=2` + 1 条 `step-retry`；全部尝试失败 ⇒ blocked 且 2 条重试记录；`barrier+retry` ⇒ 配置错误且不创建运行目录 |
+| 4 | 运行时可观测性 | 内核为每个 Attempt 记录 `durationMs`（barrier 组按组计时并回填）、新增 `onEvent` 实时事件回调（`RunArtifacts.event()` 里触发，流即时间线的镜像）；CLI `run/rerun --verbose` 边跑边打印 `step <id> -> <outcome> <ms>`、`observe`、`step-retry`、`evidence-invalid`、`BLOCKED`，结束后给每步耗时表与最慢三步 | 实测 `--verbose` 输出：`step alice-register -> completed 1403ms` … 结束 `slowest: alice-register 1403ms, alice-login 1192ms, alice-submit-booking 626ms` |
+
+**协议扩展说明（为什么不用升版）**：本轮新增 `Attempt.durationMs`、`Attempt.attemptIndex`、导出 `AttemptOutcome`、`Step.retry`（含 `StepRetry`）、`StepRetry` 校验（`attempts` 1–5）；全部是**可选的、向后兼容的**扩展——旧场景不含 `retry` 仍合法，旧结果不含新字段仍可解析，新的校验只排除「本来就不该出现」的取值（与二轮 `Attempt.evidence`、`missingEvidenceTypes` 收紧同一判断标准）。会改变既有语义的变更（如 `when`）必须升版并重跑全部证据链。
+
+**四轮实测**：`npm run verify` 137/137；`positive-negative-matrix` 19/19（含 retry 后的复跑：`rc-mv29u38h-c3f4ce04` → rerun `rc-mv29x5ef-3475576f`，`previous=passed now=passed`）；`blocked-case` PASS；`tri-entry-consistency` 三入口一致；`external-agent-loop` OK。
+
+**诚实边界**：`diagnostic-benchmark` 与 `serial-stability` 在本轮场景加了 `retry` 之后的**复跑被放到后台执行，未观测到结果**（retry 只在 `outcome=error` 时触发，正常路径不重试，故预期不变；上一次完整记录为 12/12 与 10/10）。`npm run accept` 的完整一次性运行仍未跑完一遍。

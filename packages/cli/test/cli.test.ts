@@ -18,6 +18,7 @@ import {
 import { checkCommand } from "../src/commands/check.js";
 import { exportCommand } from "../src/commands/export.js";
 import { planCommand } from "../src/commands/plan.js";
+import { runCommand } from "../src/commands/run.js";
 import { main, USAGE } from "../src/main.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -248,6 +249,28 @@ describe("export command", () => {
     const res = await runCmd(exportCommand, ["--config", config]);
     assert.equal(res.code, 0, res.stderr);
     assert.match(res.stdout, /no runs found/);
+  });
+});
+
+describe("run command diagnostics (方案 §12 报错体验)", () => {
+  it("a blocked run says WHY on stdout, so nobody has to read the source", async () => {
+    const dir = await makeTmp();
+    const config = await writeConfig(dir, {
+      entry: "./does-not-exist/server.js",
+      scenariosDir: SCENARIOS_DIR,
+    });
+    const res = await runCmd(runCommand, [
+      path.join(SCENARIOS_DIR, "booking-normal.json"),
+      "--config",
+      config,
+    ]);
+    assert.equal(res.code, 3, res.stderr);
+    assert.match(res.stdout, /run rc-[^:]+: blocked \(exit 3\)/);
+    assert.match(res.stdout, /^blocked at setupEnv: /m);
+    assert.match(res.stdout, /应用没能起来/);
+    assert.match(res.stdout, /not-evaluated booking-recorded/);
+    // …and where to look for the full record.
+    assert.match(res.stdout, /full record: .*result\.json/);
   });
 });
 

@@ -88,17 +88,28 @@ export interface EnvSummary {
   platform: string;
 }
 
+/** How a step ended. `rejected` / `no-nav` are the app's honest answers to a
+ * step that DID execute (business information); `error` means the step could
+ * not be executed at all (方案 §3.3 规则 17 ⇒ 内核判 blocked)。 */
+export type AttemptOutcome = "completed" | "rejected" | "no-nav" | "error";
+
 export interface Attempt {
   stepId: string;
   actor: string;
   op: string;
-  outcome: "completed" | "rejected" | "no-nav" | "error";
+  outcome: AttemptOutcome;
   httpStatus?: number;
   detail?: Record<string, unknown>;
   /** Evidence the adapter captured for THIS step (截图/DOM 快照). The kernel
    * verifies every ref before it enters the result (方案 §10 证据: 采集即落盘 +
    * 内核登记核对); a step may legitimately carry none. */
   evidence?: EvidenceRef[];
+  /** Wall-clock duration of this attempt, measured by the kernel. Answers
+   * "哪一步慢/哪一步卡住" without reading logs (方案 §12 运行时可观测性). */
+  durationMs?: number;
+  /** 1-based index of this attempt when the step declares `retry` (方案 §12
+   * 场景表达): 1 = first try. Absent when the step was not retried. */
+  attemptIndex?: number;
 }
 
 export interface RunResult {
@@ -182,6 +193,8 @@ export const resultV: V<RunResult> = vObject<RunResult>({
           httpStatus: vInt({ min: 100, max: 599 }),
           detail: vRecord(vUnionV),
           evidence: vArray(evidenceRefV),
+          durationMs: vInt({ min: 0 }),
+          attemptIndex: vInt({ min: 1 }),
         },
       }),
     ),

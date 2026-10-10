@@ -40,6 +40,8 @@ export interface RunOnceOptions {
   /** --fault override; falls back to config.app.faultEnv. */
   fault?: string;
   previousRunId?: string;
+  /** Live progress hook, forwarded to the kernel (CLI `--verbose`). */
+  onEvent?: (event: TimelineEvent) => void;
 }
 
 export function cliMetaPath(config: RcConfig, runId: string): string {
@@ -102,8 +104,13 @@ export async function runOnce(opts: RunOnceOptions): Promise<RunOutcome> {
   if (faultEnv !== undefined && faultEnv !== "") adapterOpts.faultEnv = faultEnv;
   const adapter = createLocalWebAdapter(adapterOpts);
 
-  const execOpts: { runsRoot: string; seed?: number } = { runsRoot: config.runsDir };
+  const execOpts: {
+    runsRoot: string;
+    seed?: number;
+    onEvent?: (event: TimelineEvent) => void;
+  } = { runsRoot: config.runsDir };
   if (opts.seed !== undefined) execOpts.seed = opts.seed;
+  if (opts.onEvent !== undefined) execOpts.onEvent = opts.onEvent;
 
   let result: RunResult;
   try {

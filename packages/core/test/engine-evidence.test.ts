@@ -91,8 +91,11 @@ class FakeAdapter implements LocalWebAdapterV1 {
   /** username:seedRole for every role the kernel handed to setupEnv (规则 7). */
   seedRoles: string[] = [];
   /** "step-evidence": every step returns one verifiable ref + one ghost ref.
-   * "db": setupEnv creates a db file under the data root (ownership ledger). */
+   * "step-error": every step errors. "step-rejected": every step is rejected.
+   * "step-error-once": the FIRST attempt of each step errors, later ones succeed
+   * (drives the bounded-retry path). "db": setupEnv creates a db file. */
   readonly behaviour: Set<string>;
+  private readonly stepAttempts = new Map<string, number>();
   constructor(
     /** Build the observation AFTER the run dir exists (like a real adapter). */
     private readonly read: (runDir: string) => Promise<ObserverReading>,
@@ -151,6 +154,17 @@ class FakeAdapter implements LocalWebAdapterV1 {
       op: step.op,
       outcome: "completed",
     };
+    const seen = (this.stepAttempts.get(step.id) ?? 0) + 1;
+    this.stepAttempts.set(step.id, seen);
+    if (this.behaviour.has("step-error-once") && seen === 1) {
+      return {
+        stepId: step.id,
+        actor: step.actor,
+        op: step.op,
+        outcome: "error",
+        detail: { error: "fake adapter: transient failure (first attempt)" },
+      };
+    }
     if (this.behaviour.has("step-error")) {
       return {
         stepId: step.id,
@@ -373,6 +387,86 @@ describe("步骤执行失败 ⇒ blocked，绝不产出业务结论 (方案 §10
     const result = await executeScenario(scenario(), adapter, { runsRoot });
     assert.equal(result.verdict, "passed");
     assert.equal(result.attempts[0]?.outcome, "rejected");
+  });
+});
+
+describe("有界重试与可观测性 (方案 §12)", () => {
+  it("retries a step while the previous attempt errored, and keeps every attempt visible", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, [
+      "step-error-once",
+    ]);
+    const result = await executeScenario(
+      scenario({
+        steps: [{ id: "s1", actor: "alice", op: "navigate", params: { path: "/" }, retry: { attempts: 2 } }],
+      }),
+      adapter,
+      { runsRoot },
+    );
+    // The rerun recovered, so the run is NOT blocked (规则 17 applies to the
+    // outcome that actually stands)…
+    assert.equal(result.verdict, "passed");
+    // …and the failed first attempt is not hidden: one retry event, one
+    // attempt for the step carrying attemptIndex 2.
+    assert.equal(result.attempts.length, 1);
+    assert.equal(result.attempts[0]?.attemptIndex, 2);
+    assert.equal(result.attempts[0]?.outcome, "completed");
+    const retries = result.timeline.filter((e) => e.kind === "step-retry");
+    assert.equal(retries.length, 1);
+    assert.equal(retries[0]?.detail["attemptIndex"], 1);
+    assert.match(String(retries[0]?.detail["reason"]), /transient failure/);
+  });
+
+  it("still blocks when every allowed attempt errors", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, [
+      "step-error",
+    ]);
+    const result = await executeScenario(
+      scenario({
+        steps: [{ id: "s1", actor: "alice", op: "navigate", params: { path: "/" }, retry: { attempts: 3 } }],
+      }),
+      adapter,
+      { runsRoot },
+    );
+    assert.equal(result.verdict, "blocked");
+    assert.equal(result.attempts[0]?.attemptIndex, 3);
+    assert.equal(result.timeline.filter((e) => e.kind === "step-retry").length, 2);
+  });
+
+  it("records per-step duration and streams events to the caller", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []));
+    const streamed: string[] = [];
+    const result = await executeScenario(scenario(), adapter, {
+      runsRoot,
+      onEvent: (event) => streamed.push(event.kind),
+    });
+    assert.equal(typeof result.attempts[0]?.durationMs, "number");
+    assert.ok((result.attempts[0]?.durationMs ?? -1) >= 0);
+    // The live hook sees the SAME ordered events that end up in the timeline.
+    assert.deepEqual(streamed, result.timeline.map((e) => e.kind));
+    assert.ok(streamed.includes("step"));
+  });
+
+  it("refuses barrier + retry on the same step (no meaningful concurrent retry)", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []));
+    await assert.rejects(
+      () =>
+        executeScenario(
+          scenario({
+            steps: [
+              { id: "b1", actor: "alice", op: "submit", barrier: true, retry: { attempts: 2 } },
+              { id: "b2", actor: "alice", op: "submit", barrier: true },
+            ],
+          }),
+          adapter,
+          { runsRoot },
+        ),
+      isRunError,
+    );
+    assert.deepEqual(await readdir(runsRoot), []);
   });
 });
 

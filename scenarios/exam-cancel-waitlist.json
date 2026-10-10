@@ -119,12 +119,14 @@
       "op": "navigate",
       "params": {
         "path": "/cancel?exam=exam-1"
-      }
+      },
+      "retry": { "attempts": 2, "on": ["error"] }
     },
     {
       "id": "holder-submit-cancel",
       "actor": "holder",
-      "op": "submit"
+      "op": "submit",
+      "retry": { "attempts": 2, "on": ["error"] }
     }
   ],
   "observers": [

@@ -51,6 +51,9 @@ export class RunArtifacts {
   private constructor(
     dir: string,
     private readonly manifest: RunManifest,
+    /** Optional live hook: called for every appended event, in order. Lets a
+     * caller stream progress (方案 §12 运行时可观测性) without polling files. */
+    private readonly onEvent?: (event: TimelineEvent) => void,
   ) {
     this.dir = dir;
     this.evidenceDir = join(dir, EVIDENCE_DIR);
@@ -69,6 +72,7 @@ export class RunArtifacts {
       versions: Record<string, string>;
       platform: string;
     },
+    opts: { onEvent?: (event: TimelineEvent) => void } = {},
   ): Promise<RunArtifacts> {
     const dir = join(resolve(runsRoot), runId);
     const runManifest: RunManifest = {
@@ -81,7 +85,7 @@ export class RunArtifacts {
       versions: manifest.versions,
       platform: manifest.platform,
     };
-    const artifacts = new RunArtifacts(dir, runManifest);
+    const artifacts = new RunArtifacts(dir, runManifest, opts.onEvent);
     await mkdir(artifacts.evidenceDir, { recursive: true });
     await writeFile(join(dir, RUN_MANIFEST), JSON.stringify(runManifest, null, 2), "utf8");
     return artifacts;
@@ -103,6 +107,7 @@ export class RunArtifacts {
     if (opts.causation !== undefined) e.causation = opts.causation;
     this.eventLog.push(e);
     await appendFile(this.eventsPath, `${JSON.stringify(e)}\n`, "utf8");
+    this.onEvent?.(e);
     return e;
   }
 

@@ -5,7 +5,9 @@
  * dir, and prints previous vs. now so a business fix shows up as a verdict
  * change. Exit code = the NEW verdict's code.
  */
-import { VERDICT_EXIT } from "@rc/protocol";
+import path from "node:path";
+import { VERDICT_EXIT, type TimelineEvent } from "@rc/protocol";
+import { streamEventLine, verdictLines } from "../format.js";
 import {
   configError,
   flagString,
@@ -36,16 +38,29 @@ async function rerunCommandImpl(args: string[]): Promise<CommandResult> {
 
   const meta = await readCliMeta(config, runId);
   const previousVerdict = await readVerdictFromResult(config, runId);
+  const verbose = parsed.flags.get("verbose") === true || parsed.flags.get("verbose") === "true";
 
   const { result } = await runOnce({
     config,
     scenarioPath: meta.scenarioPath,
     seed: meta.seed,
     previousRunId: runId,
+    ...(verbose
+      ? {
+          onEvent: (event: TimelineEvent) => {
+            const line = streamEventLine(event);
+            if (line !== null) process.stdout.write(`${line}\n`);
+          },
+        }
+      : {}),
   });
 
-  const exit = VERDICT_EXIT[result.verdict];
-  const stdout =
-    `rerun ${result.runId} (prev ${runId}): previous=${previousVerdict} now=${result.verdict}`;
-  return { code: exit, stdout, stderr: "" };
+  return {
+    code: VERDICT_EXIT[result.verdict],
+    stdout: [
+      `rerun ${result.runId} (prev ${runId}): previous=${previousVerdict} now=${result.verdict}`,
+      ...verdictLines(result, { verbose, runDir: path.join(config.runsDir, result.runId) }).slice(1),
+    ].join("\n"),
+    stderr: "",
+  };
 }

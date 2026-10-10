@@ -6,7 +6,8 @@
  * config problems exit 64, kernel/internal faults exit 70.
  */
 import path from "node:path";
-import { VERDICT_EXIT } from "@rc/protocol";
+import { VERDICT_EXIT, type TimelineEvent } from "@rc/protocol";
+import { streamEventLine, verdictLines } from "../format.js";
 import {
   configError,
   flagInt,
@@ -37,18 +38,31 @@ async function runCommandImpl(args: string[]): Promise<CommandResult> {
   const config = loadConfig(flagString(parsed, "config"));
   const seed = flagInt(parsed, "seed");
   const fault = flagString(parsed, "fault");
+  // Human-facing live stream (方案 §12 运行时可观测性): with --verbose each step
+  // is printed as it happens, so "哪一步卡住" is visible while waiting.
+  const verbose = parsed.flags.get("verbose") === true || parsed.flags.get("verbose") === "true";
 
   const { result } = await runOnce({
     config,
     scenarioPath: path.resolve(scenarioPath),
     ...(seed !== undefined ? { seed } : {}),
     ...(fault !== undefined ? { fault } : {}),
+    ...(verbose
+      ? {
+          onEvent: (event: TimelineEvent) => {
+            const line = streamEventLine(event);
+            if (line !== null) process.stdout.write(`${line}\n`);
+          },
+        }
+      : {}),
   });
 
-  const exit = VERDICT_EXIT[result.verdict];
-  const lines = [`run ${result.runId}: ${result.verdict} (exit ${exit})`];
-  for (const ev of result.ruleEvaluations) {
-    lines.push(`${ev.verdict} ${ev.ruleId}`);
-  }
-  return { code: exit, stdout: lines.join("\n"), stderr: "" };
+  return {
+    code: VERDICT_EXIT[result.verdict],
+    stdout: verdictLines(result, {
+      verbose,
+      runDir: path.join(config.runsDir, result.runId),
+    }).join("\n"),
+    stderr: "",
+  };
 }

@@ -23,6 +23,7 @@ import {
   type RunResult,
   type Scenario,
   type Step,
+  type TimelineEvent,
   type Verdict,
 } from "@rc/protocol";
 import type { LocalWebAdapterV1, ObserverReading, StepContext } from "./adapter.js";
@@ -64,7 +65,12 @@ function errorDetail(e: unknown): Record<string, unknown> {
 export async function executeScenario(
   scenario: Scenario,
   adapter: LocalWebAdapterV1,
-  opts: { runsRoot: string; seed?: number },
+  opts: {
+    runsRoot: string;
+    seed?: number;
+    /** Live progress hook: every timeline event, in order (方案 §12 可观测性). */
+    onEvent?: (event: TimelineEvent) => void;
+  },
 ): Promise<RunResult> {
   const manifest = adapter.manifest();
 
@@ -86,6 +92,13 @@ export async function executeScenario(
   for (const step of scenario.steps)
     if (!manifest.supportedOps.includes(step.op))
       throw configError(`adapter does not support step op "${step.op}" (step ${step.id})`);
+  // A retried step has ONE sequential attempt list; a barrier step is submitted
+  // concurrently and has no meaningful "retry" — refuse instead of guessing.
+  for (const step of scenario.steps)
+    if (step.barrier === true && step.retry !== undefined)
+      throw configError(
+        `step "${step.id}" declares both barrier and retry; a concurrent group cannot be retried step-by-step`,
+      );
   for (const a of scenario.assertions)
     if (!manifest.supportedAssertions.includes(a.op))
       throw configError(`adapter does not support assertion op "${a.op}" (assertion ${a.id})`);
@@ -128,6 +141,7 @@ export async function executeScenario(
   const runId = newRunId();
   const scenarioSha256 = createHash("sha256").update(canonicalJson(scenario)).digest("hex");
   const platformSummary = `${platform()} ${arch()} node ${process.version}`;
+  const artifactOpts = opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {};
   const artifacts = await RunArtifacts.create(opts.runsRoot, runId, {
     scenarioId: scenario.id,
     scenarioSha256,
@@ -140,7 +154,7 @@ export async function executeScenario(
       adapter: manifest.adapterVersion,
     },
     platform: platformSummary,
-  });
+  }, artifactOpts);
   await artifacts.event("run-started", { scenarioId: scenario.id, seed, scenarioSha256 });
 
   const attempts: Attempt[] = [];
@@ -282,7 +296,41 @@ export async function executeScenario(
       if (attempt.httpStatus !== undefined) detail.httpStatus = attempt.httpStatus;
       if (attempt.detail !== undefined) detail.detail = attempt.detail;
       if (attempt.evidence !== undefined) detail.evidence = attempt.evidence.length;
+      if (attempt.durationMs !== undefined) detail.durationMs = attempt.durationMs;
+      if (attempt.attemptIndex !== undefined) detail.attemptIndex = attempt.attemptIndex;
       await artifacts.event("step", detail, { actor: attempt.actor });
+    };
+
+    /** One bounded sequential execution of a step, with optional retry:
+     * retried attempts are recorded as `step-retry` events (visible in the
+     * timeline) and only the LAST attempt becomes this step's Attempt — so the
+     * attempts list stays one entry per step and 规则 17 (error ⇒ blocked)
+     * still judges the outcome that actually stands. */
+    const runStepWithRetry = async (step: Step): Promise<Attempt> => {
+      const maxAttempts = step.retry?.attempts ?? 1;
+      const retryOn = new Set(step.retry?.on ?? ["error"]);
+      let attempt: Attempt | undefined;
+      for (let k = 1; k <= maxAttempts; k++) {
+        const started = Date.now();
+        try {
+          attempt = await adapter.runStep(step, ctx);
+        } catch (e) {
+          attempt = errorAttempt(step, e);
+        }
+        attempt.durationMs = Date.now() - started;
+        if (k > 1) attempt.attemptIndex = k;
+        const willRetry = k < maxAttempts && retryOn.has(attempt.outcome);
+        if (!willRetry) return attempt;
+        await artifacts.event("step-retry", {
+          stepId: step.id,
+          attemptIndex: k,
+          outcome: attempt.outcome,
+          durationMs: attempt.durationMs,
+          reason: String((attempt.detail as { error?: unknown } | undefined)?.error ?? attempt.outcome),
+        });
+      }
+      if (attempt === undefined) throw internalError(`step "${step.id}" produced no attempt`);
+      return attempt;
     };
 
     const steps = scenario.steps;
@@ -298,20 +346,24 @@ export async function executeScenario(
           group.push(s);
           i++;
         }
+        const started = Date.now();
         try {
           const batch = await adapter.runBarrier(group, ctx);
-          for (const attempt of batch) await recordAttempt(attempt);
+          const elapsed = Date.now() - started;
+          for (const attempt of batch) {
+            attempt.durationMs = attempt.durationMs ?? elapsed;
+            await recordAttempt(attempt);
+          }
         } catch (e) {
-          for (const s of group) await recordAttempt(errorAttempt(s, e));
+          const elapsed = Date.now() - started;
+          for (const s of group) {
+            const attempt = errorAttempt(s, e);
+            attempt.durationMs = elapsed;
+            await recordAttempt(attempt);
+          }
         }
       } else {
-        let attempt: Attempt;
-        try {
-          attempt = await adapter.runStep(step, ctx);
-        } catch (e) {
-          attempt = errorAttempt(step, e);
-        }
-        await recordAttempt(attempt);
+        await recordAttempt(await runStepWithRetry(step));
         i++;
       }
     }
