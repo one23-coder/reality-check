@@ -17,9 +17,10 @@ const skipSerial = process.argv.includes("--no-serial");
 
 /** [名称, 命令, 参数, 说明] —— 顺序执行，判据只有退出码。 */
 const GATES = [
-  ["verify", "npm", ["run", "verify"], "typecheck + build + 全仓测试（124+ 项，含真实浏览器 e2e）"],
-  ["matrix", "node", ["scripts/positive-negative-matrix.mjs"], "正反例矩阵：19 用例，退出码与归因规则"],
-  ["benchmark", "node", ["scripts/diagnostic-benchmark.mjs"], "标注案例集：12 用例，漏报/误报统计"],
+  // 说明里不写用例数：数字会随场景增加而漂移，判据是退出码，不是文案。
+  ["verify", "npm", ["run", "verify"], "typecheck + build + 全仓测试（含真实浏览器 e2e）"],
+  ["matrix", "node", ["scripts/positive-negative-matrix.mjs"], "正反例矩阵：退出码与归因规则"],
+  ["benchmark", "node", ["scripts/diagnostic-benchmark.mjs"], "标注案例集：漏报/误报统计"],
   ["tri-entry", "node", ["scripts/tri-entry-consistency.mjs"], "CLI / 工作台 / MCP 逐字段比对 result.json"],
   ["agent-loop", "node", ["scripts/external-agent-loop.mjs"], "仅公开接口的闭环：failed → 修应用 → rerun passed"],
   ["blocked", "node", ["scripts/blocked-case.mjs"], "环境缺失 → exit 3、verdict blocked、规则 not-evaluated"],

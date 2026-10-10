@@ -305,7 +305,7 @@ CLI（已有）／工作台／MCP／CI
 
 | # | 判据（可检验） | 现状 | 证据 / 缺口 |
 | --- | --- | --- | --- |
-| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 162/162（2026-10-10 六轮） |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 162/162；**`npm run accept` 一键 7/7 一次性跑通**（2026-10-10 六轮，见 A.12） |
 | 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
 | 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
 | 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
@@ -521,3 +521,26 @@ CLI（已有）／工作台／MCP／CI
 **六轮实测**：`npm run verify` **162/162**（新增 sanitize 单测 13 项 + CLI pack 端到端 4 项）；真实运行 `rc-mv2cbos9-4b4734d8`（booking-normal）导出：**12 文件、74 处替换**（known-secret×22、loopback-port×43、windows-path×9）、**4 个二进制排除**、`leak scan: clean (checked 8 known secrets)`；对包内全部文本文件做**外部正则反扫**：账号/路径/端口零残留（仅 HTML 标题中的产品名「Reality Check」两处命中，属外部扫描模式过宽的误报，非泄漏）。
 
 **诚实边界**：反扫的敏感值集合 = 已知值 + 规则可识别的模式；**未**做 OCR/图像内容识别（因此二进制默认不打包）；MCP 侧的 `rc_export_pack` 工具尚未暴露（CLI 已可用，列 §11.2）。
+
+### A.12 2026-10-10 六轮补记：一键门禁全量跑通 + 类型镜像清理
+
+**① `npm run accept` 一次性完整跑通（此前三轮起持续记录的取证缺口，现已关闭）**
+
+| 门禁 | 耗时 | 结论 |
+| --- | --- | --- |
+| verify | 42.9s | typecheck + build + 全仓测试 162/162 |
+| matrix | 156.6s | 正反例矩阵：退出码与归因规则全部一致 |
+| benchmark | 146.6s | 标注案例集：漏报/误报统计无回归 |
+| tri-entry | 17.7s | CLI / 工作台 / MCP 逐字段比对 result.json 一致 |
+| agent-loop | 18.3s | 仅公开接口的闭环：failed → 修应用 → rerun passed |
+| blocked | 19.2s | 环境缺失 → exit 3、verdict blocked、规则 not-evaluated |
+| serial | 71.4s | 固定场景连跑 10 次结论一致 |
+| **合计** | **≈8 分钟** | **acceptance: 7/7 通过 — 全部证据链一致** |
+
+同时修正门禁脚本里写死的用例数（19/12/124+ 已过时，且会继续漂移）：说明文案改为自描述，判据保持退出码不变。
+
+**② 适配器类型镜像改为 re-export（工程债清理）**
+
+`packages/adapter-local-web/src/types.ts` 原先手工镜像 protocol 的 `Attempt` / `AttemptOutcome` / `EvidenceRef` / `AdapterManifest` 等 10 个类型——漂移时不会编译报错，只会在运行时变成「被校验器拒收的 result.json」或「被内核静默丢弃的证据」。现改为 `export type { ... } from "@rc/protocol"`（该包本就依赖 protocol）。仅 `ObserverReading` 与 `StepContext` 保留本地定义：它们是内核侧形状，而**适配器不得依赖内核**（这个依赖方向是适配器可替换的前提），其 `evidence` 字段用 protocol 的 `EvidenceRef`，规则不变。改动后 `npm run verify` 仍 162/162。
+
+**诚实边界**：其余「外部验证」项（CI 托管 Runner 运行号、≥3 个外部项目、macOS）仍未取到——它们在 §12 保持 ⬜，不以本机通过代替。

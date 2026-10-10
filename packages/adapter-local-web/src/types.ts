@@ -1,72 +1,41 @@
-/** Local, structurally-identical copies of the kernel-facing protocol types.
+/** Adapter-facing protocol shapes — re-exported from `@rc/protocol`.
  *
- * Defined here on purpose (方案 §3.3 规则 2's spirit: single source of truth is
- * @rc/protocol — these shapes mirror it exactly so this adapter never blocks
- * on a sibling package mid-refactor). If protocol changes shape, keep these in
- * sync or switch to `import type { ... } from "@rc/protocol"`.
- */
+ * These used to be hand-mirrored here, which let them drift silently: a protocol
+ * change (say, renaming `Attempt.evidence` or widening `AttemptOutcome` with
+ * `skipped`) would still compile and only surface later as a result.json the
+ * validator rejects, or worse — as evidence the kernel silently drops. 方案 §3.3
+ * 规则 2 says the protocol is the single source of truth, so the mirror is gone.
+ *
+ * Only `ObserverReading` and `StepContext` stay local: they are kernel-side
+ * shapes defined in `@rc/core`, and an adapter must NOT depend on the kernel
+ * (that dependency direction is what keeps adapters swappable). */
 
-export type SeedRole = "holder" | "none" | "waitlisted";
+export type {
+  AdapterManifest,
+  Attempt,
+  AttemptOutcome,
+  EnvSummary,
+  EvidenceKind,
+  EvidenceRef,
+  Role,
+  SeedRole,
+  Step,
+  StepOp,
+} from "@rc/protocol";
 
-export interface Role {
-  id: string;
-  account: { username: string; password: string };
-  seedRole: SeedRole;
-  attrs?: Record<string, string | number | boolean>;
+/** One observer's reading. Mirrors `@rc/core`'s `ObserverReading` on purpose:
+ * the adapter cannot import the kernel, and structural compatibility is what
+ * the adapter boundary is checked against at runtime (see `@rc/adapter-sdk`'s
+ * consistency suite). `evidence` is protocol's `EvidenceRef`, so the kernel's
+ * verification rules apply to it unchanged. */
+export interface ObserverReading {
+  observerId: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  evidence: import("@rc/protocol").EvidenceRef[];
 }
 
-export type StepOp =
-  | "navigate"
-  | "register"
-  | "login"
-  | "fill"
-  | "click"
-  | "submit"
-  | "wait"
-  | "barrier";
-
-export interface Step {
-  id: string;
-  actor: string;
-  op: StepOp;
-  params?: Record<string, string | number | boolean>;
-  barrier?: boolean;
-}
-
-export type EvidenceKind = "screenshot" | "dom-snapshot" | "har" | "sql-dump" | "page-text";
-
-export interface EvidenceRef {
-  kind: EvidenceKind;
-  /** Path relative to the run directory; must exist when referenced. */
-  file: string;
-  seq: number;
-  actor?: string;
-  sha256: string;
-}
-
-export interface EnvSummary {
-  appVersion: string;
-  adapterVersion: string;
-  baseUrl: string;
-  dbPath?: string;
-  seed: number;
-  platform: string;
-}
-
-export type AttemptOutcome = "completed" | "rejected" | "no-nav" | "error";
-
-export interface Attempt {
-  stepId: string;
-  actor: string;
-  op: string;
-  outcome: AttemptOutcome;
-  httpStatus?: number;
-  detail?: Record<string, unknown>;
-  /** Mirrors protocol `Attempt.evidence` (结果协议 1.0): the kernel verifies
-   * and registers these refs — keep this mirror in sync with the protocol. */
-  evidence?: EvidenceRef[];
-}
-
+/** Per-step callback surface handed to the adapter by the kernel. */
 export interface StepContext {
   runDir: string;
   seed: number;
@@ -76,24 +45,4 @@ export interface StepContext {
     actor?: string,
     causation?: number,
   ): Promise<number>;
-}
-
-export interface ObserverReading {
-  observerId: string;
-  columns: string[];
-  rows: Record<string, unknown>[];
-  evidence: EvidenceRef[];
-}
-
-export interface AdapterManifest {
-  protocol: { manifest: "1.0" };
-  adapterId: string;
-  adapterVersion: string;
-  scenarioVersion: string;
-  supportedOps: string[];
-  supportedAssertions: string[];
-  observedTables: string[];
-  evidenceKinds: EvidenceKind[];
-  barriers: boolean;
-  observers: Record<string, { sql: string; tables: string[]; columns: string[] }>;
 }
