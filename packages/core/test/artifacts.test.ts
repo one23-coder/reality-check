@@ -113,6 +113,54 @@ describe("RunArtifacts.event seq", () => {
   });
 });
 
+describe("RunArtifacts.verifyEvidenceRef", () => {
+  it("accepts a ref whose file exists under evidence/ with a matching hash", async () => {
+    const artifacts = await makeArtifacts();
+    const file = join(artifacts.evidenceDir, "dump.json");
+    await writeFile(file, '{"rows":[]}', "utf8");
+    const ref = await artifacts.evidence("sql-dump", file);
+    assert.equal(await artifacts.verifyEvidenceRef(ref), null);
+  });
+
+  it("names a dangling reference instead of trusting it (方案 §4 铁律 3)", async () => {
+    const artifacts = await makeArtifacts();
+    await writeFile(join(artifacts.evidenceDir, "dump.json"), "rows", "utf8");
+    const real = await artifacts.evidence("sql-dump", "evidence/dump.json");
+    const ghost = { ...real, file: "evidence/ghost.json" };
+    assert.match(String(await artifacts.verifyEvidenceRef(ghost)), /does not exist/);
+  });
+
+  it("rejects an empty file as placeholder content", async () => {
+    const artifacts = await makeArtifacts();
+    const file = join(artifacts.evidenceDir, "empty.txt");
+    await writeFile(file, "", "utf8");
+    const ref = { kind: "page-text" as const, file: "evidence/empty.txt", seq: 0, sha256: "x" };
+    assert.match(String(await artifacts.verifyEvidenceRef(ref)), /is empty/);
+  });
+
+  it("rejects a ref whose sha256 does not match the file's content", async () => {
+    const artifacts = await makeArtifacts();
+    const file = join(artifacts.evidenceDir, "dump.json");
+    await writeFile(file, "rows", "utf8");
+    const real = await artifacts.evidence("sql-dump", file);
+    await writeFile(file, "rows tampered with after registration", "utf8");
+    assert.match(String(await artifacts.verifyEvidenceRef(real)), /sha256 mismatch/);
+  });
+
+  it("rejects paths that escape the run dir or leave evidence/", async () => {
+    const artifacts = await makeArtifacts();
+    const escaping = {
+      kind: "sql-dump" as const,
+      file: "../outside.json",
+      seq: 0,
+      sha256: "x",
+    };
+    assert.match(String(await artifacts.verifyEvidenceRef(escaping)), /escapes the run directory/);
+    const insideRunOnly = { kind: "screenshot" as const, file: "run.json", seq: 0, sha256: "x" };
+    assert.match(String(await artifacts.verifyEvidenceRef(insideRunOnly)), /outside evidence\//);
+  });
+});
+
 describe("RunArtifacts layout", () => {
   it("writes run.json and result.json under the run dir", async () => {
     const artifacts = await makeArtifacts();

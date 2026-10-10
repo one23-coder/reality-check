@@ -1,10 +1,12 @@
 // Bounded model planning (方案 §3.3 规则 9 / §10 模型边界): the model may only
 // SELECT among saved scenarios. Model unavailable / timeout / budget exhausted
-// / unknown scenario id / unparseable reply all fall back to a saved scenario.
+// / unknown scenario id / unparseable reply all fall back — to the
+// keyword-matched saved scenario when there was a category clue, otherwise to
+// a needs-model decision with NO scenario (guessing a default is forbidden).
 // This module NEVER propagates exceptions upward.
 import { parseJsonStrict } from "@rc/protocol";
 import { pickScenario } from "./heuristic.js";
-import { PLACEHOLDER_SCENARIO, type PlanDecision, type PlanRequest } from "./types.js";
+import type { PlanDecision, PlanRequest } from "./types.js";
 
 type Params = Record<string, string | number | boolean>;
 
@@ -18,11 +20,13 @@ function sanitizeParams(value: unknown): Params {
   return out;
 }
 
-/** Fall back to the keyword-closest saved scenario, then to the first saved
- * scenario. Returns a needs-model decision only when nothing is available. */
+/** Model-planning failure fallback. If the keyword heuristic had matched a
+ * saved scenario, fall back to it (模型不可用回退到已保存场景, 方案 §3.3 规则 9).
+ * If there was NO category clue, NO scenario is chosen — guessing a default
+ * is forbidden (规则 9: 没有类别线索时返回 needsModel 而不是猜默认场景). */
 function modelFallback(req: PlanRequest, why: string): PlanDecision {
   const kw = pickScenario(req);
-  if (!kw.needsModel) {
+  if (!kw.needsModel && kw.scenario !== undefined) {
     return {
       scenario: kw.scenario,
       params: kw.params,
@@ -31,22 +35,11 @@ function modelFallback(req: PlanRequest, why: string): PlanDecision {
       reason: `${why}; fell back to keyword-matched saved scenario "${kw.scenario.id}"`,
     };
   }
-  const first = req.savedScenarios[0];
-  if (first) {
-    return {
-      scenario: first,
-      params: {},
-      fallback: "model-error",
-      needsModel: false,
-      reason: `${why}; fell back to first saved scenario "${first.id}"`,
-    };
-  }
   return {
-    scenario: PLACEHOLDER_SCENARIO,
     params: {},
-    fallback: "model-error",
+    fallback: "needs-model",
     needsModel: true,
-    reason: `${why}; no saved scenarios available for fallback`,
+    reason: `${why}; no category clue, refusing to guess a default scenario`,
   };
 }
 
@@ -63,7 +56,7 @@ function buildPrompt(req: PlanRequest): string {
 /**
  * Plan with the injected model client under a hard timeout / token budget.
  * Model unavailability, timeout, budget exhaustion and unknown scenario ids
- * all fall back to a saved scenario — this function never throws.
+ * all fall back per modelFallback — this function never throws.
  */
 export async function planWithModel(
   req: PlanRequest,

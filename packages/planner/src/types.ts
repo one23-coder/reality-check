@@ -19,30 +19,10 @@ export interface PlanRequest {
 }
 
 export interface PlanDecision {
-  scenario: Scenario;
+  /** Undefined on needs-model decisions: no clue and no usable model means NO scenario is chosen (方案 §3.3 规则 9). */
+  scenario?: Scenario;
   params: Record<string, string | number | boolean>;
   fallback: PlannerFallback;
   needsModel: boolean;
   reason: string;
 }
-
-/**
- * Internal placeholder used when NO scenario could be selected at all (empty
- * savedScenarios). It is never executed: planScenario() throws
- * "no scenario available and model required" instead of returning a decision
- * that carries it. Needs-model decisions also carry it — a missing clue must
- * never masquerade as a guessed default scenario (方案 §3.3 规则 9).
- */
-export const PLACEHOLDER_SCENARIO: Scenario = {
-  protocol: { scenario: SCENARIO_VERSION },
-  id: "__unresolved__",
-  name: "__unresolved__",
-  description: "placeholder: no scenario could be selected",
-  app: "",
-  roles: [],
-  steps: [],
-  observers: [],
-  assertions: [],
-  rules: [],
-  seed: 0,
-};

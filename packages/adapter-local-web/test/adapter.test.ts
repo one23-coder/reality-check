@@ -2,7 +2,8 @@
 // adapter's own free-port probe; temp dirs under os.tmpdir()).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -159,21 +160,22 @@ test("fault run (RC_FAULT=overbooking, capacity 0 free): two accounts book, viol
   const tmp = await makeTmp();
   const runDir = path.join(tmp, "run");
   const dataRoot = path.join(tmp, "data");
-  // Pre-create the DB so course-1 has capacity 0 (0 free slots); the app's
-  // INSERT OR IGNORE preserves it.
-  const dbPath = path.join(dataRoot, "app.db");
-  const { mkdirSync } = await import("node:fs");
-  mkdirSync(dataRoot, { recursive: true });
-  const pre = new DatabaseSync(dbPath);
-  pre.exec(SCHEMA);
-  pre.prepare("INSERT INTO courses (id, name, capacity) VALUES ('course-1', '高等数学', 0)").run();
-  pre.close();
-
-  const roles = [role("dan", "dan", "pw-dan", "none"), role("eve", "eve", "pw-eve", "none")];
+  // The "0 free slots" precondition is built through a SUPPORTED path — 规则 7:
+  // two seedRole "holder" accounts occupy both slots at startup — instead of
+  // pre-creating the DB file. Pre-seeding the file is refused by design
+  // (方案 §10: a data root whose content this run does not own must not be used).
+  const roles = [
+    role("h1", "h1_rc", "pw-h1", "holder"),
+    role("h2", "h2_rc", "pw-h2", "holder"),
+    role("dan", "dan", "pw-dan", "none"),
+    role("eve", "eve", "pw-eve", "none"),
+  ];
   const adapter = createLocalWebAdapter({ appPath: BOOKING_APP, faultEnv: "overbooking" });
   try {
     await adapter.setupEnv({ runDir, seed: 1, dataRoot, roles });
     await adapter.registerAccounts(roles);
+    // Capacity 2, both slots held by the seeded holders => 0 free.
+    assert.equal(Number(firstCell(await adapter.observe("capacity-left"))), 0);
     const ctx = { runDir, seed: 1, event: async () => 0 };
     for (const actor of ["dan", "eve"]) {
       await adapter.runStep(
@@ -187,11 +189,64 @@ test("fault run (RC_FAULT=overbooking, capacity 0 free): two accounts book, viol
       const attempt = await adapter.runStep({ id: `f-${actor}-submit`, actor, op: "submit" }, ctx);
       assert.equal(attempt.outcome, "completed", `${actor} should book under the fault`);
     }
-    // 0 free capacity, yet 2 bookings exist — the violation the kernel catches.
+    // 0 free capacity, yet 2 more bookings exist — the violation the kernel catches.
     const count = await adapter.observe("booking-count");
-    assert.equal(Number(firstCell(count)), 2);
+    assert.equal(Number(firstCell(count)), 4);
     const left = await adapter.observe("capacity-left");
     assert.equal(Number(firstCell(left)), -2);
+  } finally {
+    await adapter.teardown();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("refuses to start against a data root whose db file this run does not own (方案 §10)", async () => {
+  const tmp = await makeTmp();
+  const dataRoot = path.join(tmp, "data");
+  // Someone else's DB (a leftover run / a hand-made fixture) already sits at the
+  // path we would use: reusing it would silently start from stale business data.
+  mkdirSync(dataRoot, { recursive: true });
+  const pre = new DatabaseSync(path.join(dataRoot, "app.db"));
+  pre.exec(SCHEMA);
+  pre.close();
+
+  const adapter = createLocalWebAdapter({ appPath: BOOKING_APP });
+  try {
+    await assert.rejects(
+      () => adapter.setupEnv({ runDir: path.join(tmp, "run"), seed: 3, dataRoot, roles: [] }),
+      /already exists and is not owned by this run/,
+    );
+  } finally {
+    await adapter.teardown();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("a failed evidence capture is surfaced on the attempt, never silently dropped", async () => {
+  const tmp = await makeTmp();
+  const runDir = path.join(tmp, "run");
+  const roles = [role("frank", "frank", "pw-frank", "none")];
+  const adapter = createLocalWebAdapter({ appPath: BOOKING_APP });
+  try {
+    await adapter.setupEnv({ runDir, seed: 5, dataRoot: path.join(tmp, "data"), roles });
+    await adapter.registerAccounts(roles);
+    // Make the evidence directory unwritable in a deterministic way: the path
+    // becomes a plain FILE, so every capture into evidence/ must fail.
+    const evidenceDir = path.join(runDir, "evidence");
+    await rm(evidenceDir, { recursive: true, force: true });
+    await writeFile(evidenceDir, "not a directory", "utf8");
+
+    const ctx = { runDir, seed: 5, event: async () => 0 };
+    const attempt = await adapter.runStep(
+      { id: "e1", actor: "frank", op: "navigate", params: { path: "/" } },
+      ctx,
+    );
+    // The step itself still happened honestly…
+    assert.equal(attempt.outcome, "completed");
+    // …and the evidence gap is named instead of being swallowed (方案 §4).
+    const detail = (attempt.detail ?? {}) as Record<string, unknown>;
+    assert.equal(typeof detail["evidenceError"], "string");
+    assert.notEqual(detail["evidenceError"], "");
   } finally {
     await adapter.teardown();
     await rm(tmp, { recursive: true, force: true });

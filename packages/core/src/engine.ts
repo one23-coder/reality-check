@@ -18,6 +18,7 @@ import {
   type Attempt,
   type EnvSummary,
   type EvidenceRef,
+  type MissingEvidenceType,
   type RuleEvaluation,
   type RunResult,
   type Scenario,
@@ -30,8 +31,15 @@ import { RunArtifacts } from "./artifacts.js";
 import { configError, internalError } from "./errors.js";
 import { newRunId } from "./ownership.js";
 
-/** Deterministic JSON (sorted object keys) — the canonical form hashed into
- * scenarioSha256 so re-runs of the same scenario reproduce the digest. */
+/** SQL whitespace normalization for the 单一口径 comparison: runs of
+ * whitespace (including newlines) collapse to one space, so a scenario may
+ * re-wrap the manifest's SQL without changing its identity — but ANY other
+ * difference (a different column, a different WHERE clause) stays visible and
+ * is rejected as a config error. */
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim();
+}
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
@@ -93,6 +101,22 @@ export async function executeScenario(
         );
   if (scenario.steps.some((s) => s.barrier === true) && !manifest.barriers)
     throw configError(`scenario uses barrier steps but adapter "${manifest.adapterId}" cannot`);
+  // 单一口径 (方案 §3.3 规则 2): the executed SQL is the adapter manifest's.
+  // A scenario whose observer SQL differs from the manifest's is a config
+  // error — otherwise the report would display one query and judge another.
+  for (const o of scenario.observers) {
+    const declared = manifest.observers[o.id];
+    if (declared === undefined) continue;
+    if (normalizeSql(o.sql) !== normalizeSql(declared.sql))
+      throw configError(
+        `observer "${o.id}" SQL differs between scenario and adapter manifest (单一口径 violated)`,
+      );
+    for (const col of o.expectColumns)
+      if (!declared.columns.includes(col))
+        throw configError(
+          `observer "${o.id}" expects column "${col}" which the adapter manifest does not declare`,
+        );
+  }
 
   // (c) Run dir + start event.
   const seed = opts.seed ?? scenario.seed;
@@ -242,11 +266,35 @@ export async function executeScenario(
     // (g) Observations.
     const readings = new Map<string, ObserverReading>();
     const observerSeq = new Map<string, number>();
+    // Observer ids whose reading lost at least one evidence ref to
+    // verification failure (the per-file reasons live in the events above).
+    const unverifiableObservers = new Set<string>();
     for (const observer of scenario.observers) {
       try {
         const reading = await adapter.observe(observer.id);
+        // 铁律 3: the kernel verifies EVERY evidence ref it accepts — the file
+        // must exist inside this run's evidence dir and hash to the ref's
+        // sha256. Invalid refs are dropped and named; they downgrade any
+        // assertion citing the observer to inconclusive (§10).
+        const validRefs: EvidenceRef[] = [];
+        for (const ref of reading.evidence) {
+          const problem = await artifacts.verifyEvidenceRef(ref);
+          if (problem === null) {
+            validRefs.push(ref);
+          } else {
+            await artifacts.event("evidence-invalid", {
+              observerId: observer.id,
+              file: ref.file,
+              reason: problem,
+            });
+          }
+        }
+        if (validRefs.length !== reading.evidence.length) {
+          unverifiableObservers.add(observer.id);
+          reading.evidence = validRefs;
+        }
         readings.set(observer.id, reading);
-        evidence.push(...reading.evidence);
+        evidence.push(...validRefs);
         const ev = await artifacts.event("observe", {
           observerId: observer.id,
           rows: reading.rows.length,
@@ -265,7 +313,23 @@ export async function executeScenario(
 
     // (h) Assertions, causally bound to their observer's event.
     for (const assertion of scenario.assertions) {
-      const evaluation = evaluateAssertion(assertion, readings);
+      let evaluation = evaluateAssertion(assertion, readings);
+      if (unverifiableObservers.has(assertion.observer)) {
+        // Unverifiable evidence downgrades the verdict to inconclusive (§10),
+        // but the ORIGINAL reason (e.g. "rows"/"cell" gap already reported by
+        // the evaluator) must survive: 证据缺失必须按要求逐项列出，不互相覆盖.
+        const gaps = new Set<MissingEvidenceType>(evaluation.missingEvidenceTypes ?? []);
+        gaps.add("evidence-file");
+        evaluation = {
+          ruleId: evaluation.ruleId,
+          assertionId: evaluation.assertionId,
+          verdict: "inconclusive",
+          observed: evaluation.observed,
+          expected: evaluation.expected,
+          evidenceRefs: evaluation.evidenceRefs,
+          missingEvidenceTypes: [...gaps],
+        };
+      }
       evaluations.push(evaluation);
       const detail: Record<string, unknown> = {
         assertionId: assertion.id,

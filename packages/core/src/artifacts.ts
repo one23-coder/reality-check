@@ -140,6 +140,31 @@ export class RunArtifacts {
     return ref;
   }
 
+  /** Verify an evidence ref the adapter produced: the file must exist under
+   * THIS run's evidence dir and hash to the ref's sha256 (方案 §4 铁律 3:
+   * 证据由适配器落盘、内核核对 — 不核对就登记等于占位内容可伪造证据).
+   * Returns null when valid, else the reason it is unusable as evidence. */
+  async verifyEvidenceRef(ref: EvidenceRef): Promise<string | null> {
+    const abs = isAbsolute(ref.file) ? resolve(ref.file) : resolve(this.dir, ref.file);
+    const relToRun = relative(this.dir, abs).split(sep).join("/");
+    if (relToRun === "" || relToRun.startsWith("../") || relToRun === ".." || isAbsolute(relToRun))
+      return `file "${ref.file}" escapes the run directory`;
+    if (!relToRun.startsWith(EVIDENCE_DIR + "/"))
+      return `file "${ref.file}" is outside ${EVIDENCE_DIR}/`;
+    let bytes: Buffer;
+    try {
+      const s = await stat(abs);
+      if (!s.isFile()) return `file "${abs}" is not a regular file`;
+      if (s.size === 0) return `file "${abs}" is empty (placeholder content)`;
+      bytes = await readFile(abs);
+    } catch {
+      return `file "${abs}" does not exist`;
+    }
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (sha256 !== ref.sha256) return `sha256 mismatch for "${ref.file}"`;
+    return null;
+  }
+
   /** Write the final result.json. */
   async writeResult(result: RunResult): Promise<void> {
     await writeFile(join(this.dir, RESULT_FILE), JSON.stringify(result, null, 2), "utf8");

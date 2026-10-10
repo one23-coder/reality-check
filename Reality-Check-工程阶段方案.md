@@ -2,7 +2,7 @@
 
 日期：2026-09-28（本文取代 2026-09-22 版「工程阶段方案」）  
 定位：面向 localhost 项目的本地业务演练工具。  
-当前状态：**阶段 0–4 全部实现并通过实测验收（2026-09-29），v0.1.0 已打标签**；验收证据见文末附录 A。下文各阶段正文保留原定义与审查方法。
+当前状态（2026-10-10）：**阶段 0–1 ✅ 已实现并验收；阶段 2–3 功能已实现但仅 ◐（取证项未完成）；阶段 4 ◐ 核心已实现**。v0.1.0 已打标签；本轮收口的改动、缺陷与实测证据见附录 A.6。下文各阶段正文保留原定义与审查方法。
 
 ---
 
@@ -49,11 +49,11 @@
 | 重放含义 | 重新建立初始状态，运行相同场景；不是任意时刻恢复整个应用 |
 | 首发系统 | Windows 与 Linux；macOS 支持经实际验证后列入矩阵 |
 
-## 3. 当前状态总览（截至 2026-09-28）
+## 3. 当前状态总览（2026-10-10 更新：阶段 0–1 ✅；阶段 2–3 实体建成但仅 ◐（取证项未完成）；阶段 4 ◐ 部分实现）
 
 ### 3.1 已建成并实测 ✅
 
-- **Monorepo 结构**：`packages/protocol`（版本化协议：场景 1.0 / 结果 1.0 / 适配清单 1.0 / 适配接口 1.0 / 运行产物 1.0 / 工具 0.1.0）、`packages/core`（执行内核）、`packages/adapter-local-web`（本地 Web+SQLite 适配器）、`packages/planner`（受限模型规划器）、`packages/reporter`（HTML/JSON 报告）、`packages/cli`、`fixtures/booking-app`（正确版 + 三个可单独启用的故障版）。
+- **Monorepo 结构**：`packages/protocol`（版本化协议：场景 1.0 / 结果 1.0 / 适配清单 1.0 / 适配接口 1.0 / 运行产物 1.0 / 工具 0.1.0）、`packages/core`（执行内核）、`packages/adapter-local-web`（本地 Web+SQLite 适配器）、`packages/planner`（受限模型规划器）、`packages/reporter`（HTML/JSON 报告）、`packages/cli`（check/run/rerun/export/plan 五命令）、`packages/workbench`（本地工作台）、`packages/mcp-server`（MCP stdio 服务）、`packages/adapter-sdk`（适配器 SDK + 一致性套件）、`fixtures/booking-app` 与 `fixtures/exam-seat-app`（两个独立参考应用，正确版 + 三个可单独启用的故障版）。
 - **三个基准场景全部端到端跑通**：真实 Chromium → 真实表单提交 → 服务端写库 → 独立 SQL 观察 → 断言 → HTML/JSON 报告。
 - **正反例配对实测矩阵**（Windows 本机，2026-09-23 记录）：
 
@@ -63,11 +63,13 @@
 | 争抢最后名额 | 退出码 0，通过 | 退出码 1，✗ capacity-not-exceeded；✓ every-attempt-recorded 不受牵连 | — | — |
 | 取消候补递补 | 退出码 0，5/5 断言通过 | — | 退出码 1，✗ cancel-releases-slot、✗ waitlist-declared-order（3 断言失败） | 退出码 1，✗ waitlist-declared-order（4 断言通过不受牵连） |
 
-- **CLI 四命令**：`check`（结构校验+能力检查，三场景全过）、`run`、`rerun --run-id`（同种子重建环境重跑，实测正确版本重跑仍通过）、`export`（列出历史运行及复跑命令）。
-- **测试**：91 项全过 = CLI 16（其中 6 项为真实浏览器端到端验收）+ core 32 + planner 24 + protocol 5 + fixture 14。
-- **退出码契约实测**：0（通过）、1（业务违规）、2（inconclusive，证据不完整降级时见过）、64（配置非法，含 PowerShell 写出的 BOM JSON 被拒）、70（工具自身异常，UNIQUE 冲突时见过）。3（blocked）已实现定义，尚无专门验收用例，列入阶段 1 收尾。
+- **CLI 五命令**：`check`（结构校验+能力检查，六场景全过）、`run`、`rerun --run-id`（同种子重建环境重跑，实测正确版本重跑仍通过）、`export`（列出历史运行及复跑命令）、`plan`（受限规划器；无线索且无可用模型时不选任何场景，空场景目录为配置错误）。
+- **测试**：**121 项全过（2026-10-10 `npm run verify` 实测，基线为 103 项中 99 通过 / 4 失败）**。本轮新增的测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合的校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」与「证据采集失败必须留痕」两项。原「91 项」与「103 项」计数均已过时。
+- **退出码契约实测**：0（通过）、1（业务违规）、2（证据不完整降级）、3（blocked，`scripts/blocked-case.mjs` PASS）、64（配置非法，含 BOM JSON 被拒、空场景目录的 `plan`）、70（工具自身异常）。
+- **正反例配对矩阵已脚本化（2026-10-10）**：`scripts/positive-negative-matrix.mjs` 一条命令跑完 19 个用例（6 场景 `check` + booking/exam 正确实现 + 四个故障开关 + `rerun`），实测 19/19 退出码与归因规则一致，见附录 A.6。
+- **本轮新增的三条内核级保证（2026-10-10）**：内核逐条核对适配器交回的证据引用（存在性 + 哈希 + 路径、失败即降级 inconclusive 并具名 `evidence-file`）；场景观察器 SQL 与适配器清单 SQL 必须同源（单一口径，仅空白差异被容忍）；适配器拒绝使用不属于本次运行的 db 文件（见 §3.3 规则 11–13）。
 
-### 3.2 阶段 1 剩余任务 ⬜
+### 3.2 阶段 1 收尾任务 ✅ 已全部完成（证据见附录 A.2）
 
 1. **第二个独立应用接入**（不修改执行内核；不能是参考应用换皮）。
 2. **串行稳定性**：固定数据场景连续 10 次运行结论一致。
@@ -88,6 +90,10 @@
 8. **所有权台账拒绝重复登记**：同一资源登记两次直接中断，掩盖所有权错误的代码不允许跑。
 9. **规划器没有类别线索时返回 `needsModel` 而不是猜默认场景**；模型不可用/超时/预算耗尽/返回未知场景 id 一律回退到已保存场景，不向上抛异常。
 10. **端到端测试并行时必须分配独立端口**：共用端口会让一个测试的浏览器打到另一个测试的应用上，结论变成噪声。
+11. **内核必须逐条核对它接受的每一条证据引用**（2026-10-10 补）：核对文件存在、非空、在本运行 `evidence/` 内、sha256 与登记值一致；核对失败的引用从结果中剔除，引用它的断言降级为 inconclusive 并具名 `evidence-file`。此前只核对"引用是否被声明"，无法阻止伪造引用。
+12. **场景观察器 SQL 与适配器清单 SQL 必须同源，由内核在校验阶段比对**（§3.3 规则 2 早已声明，「单一口径」的内核校验在 2026-10-10 才真正落地）：只容忍空白差异，任何实质差异（列、表、WHERE）都是配置错误（exit 64），且拒绝发生在创建运行目录之前。归一化必须按空白 `\s+` 处理——写错字符类会让检查静默失效（本轮真实踩过，见附录 A.6）。
+13. **适配器拒绝使用不属于本次运行的 db 文件**（2026-10-10 补）：目标路径已存在 db 文件即拒绝启动，内核转成 blocked（exit 3），绝不静默复用残留数据。缺少这一步时，`claimDataRoot` 的 §10 数据隔离在此路径上无人执行（见附录 A.5 限制 5）。
+14. **`missingEvidenceTypes` 是封闭集合，不是 `string[]`**（2026-10-10 补）：证据缺口必须能归因到具体类型，结果校验器拒收无法归类的字符串，防止用占位值糊过校验。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -111,7 +117,7 @@
 - 每次运行独立数据；中断后的残留不会成为下次起点（数据根目录含所有权标记校验）。
 - 结论语义四分类落地：通过/违规/未完成/证据不足各自有独立退出码路径。
 
-## 5. 阶段 1：v0.1 MVP —— ◐ 主体完成，剩 4 项收尾
+## 5. 阶段 1：v0.1 MVP —— ✅ 已完成并验收（含四项收尾，见附录 A.2）
 
 ### 用户路径（已可走通 ✅）
 
@@ -139,7 +145,7 @@
 
 **达标后发布 v0.1。若第二项目要求改内核：先修抽象，再扩界面——这是既定顺序，不因时间压力调换。**
 
-## 6. 阶段 2：v0.2 本地演练工作台 ⬜
+## 6. 阶段 2：v0.2 本地演练工作台 —— ◐ 功能已实现并实测（packages/workbench，见附录 A.3）；「验收合格判定」后两项（≥3 个不同项目试用、预先标注案例集评估）无取证，故不标 ✅
 
 ### 做到什么程度
 
@@ -162,7 +168,7 @@
 - ≥3 个不同项目试用，记录接入耗时、有效发现、误报率、再次使用情况。
 - 诊断能力用预先标注的正常/故障案例集评估，公开案例范围，不用自评代替。
 
-## 7. 阶段 3：v0.3 开发工作流 ⬜
+## 7. 阶段 3：v0.3 开发工作流 —— ◐ MCP 服务与 CI 工作流已实现并实测（packages/mcp-server + .github/workflows/ci.yml，见附录 A.3）；「三入口差异比对脚本、CI 实际跑绿记录、未参与开发的助手闭环」三项无取证，故不标 ✅
 
 ### 做到什么程度
 
@@ -184,7 +190,7 @@
 - 记录并展示代码版本、场景版本、适配器版本、环境摘要。
 - 修复建议与源码修改解耦：工具只提供证据与验证结果。
 
-## 8. 阶段 4：v1.0 可扩展工具 ⬜
+## 8. 阶段 4：v1.0 可扩展工具 —— ◐ 核心已实现（packages/adapter-sdk + 一致性套件）；受控事件注入、虚拟时间、macOS 支持未开始
 
 ### 做到什么程度
 
@@ -252,9 +258,28 @@ CLI（已有）／工作台／MCP／CI
 
 首个版本的完成定义：用户能在支持范围内接入自己的项目，运行明确业务场景，拿到可信证据，并在修复后重新验证。
 
+### 11.1 本轮收口（2026-10-10，已完成）
+
+上一轮结束时工作区有 13 个文件、+223/-123 的未提交改动，全部触及 §10 不可后补条款，却零新增核心测试、无实测证据；`npm test` 实测 103 项中 4 项失败。本轮按「缺陷 → 类型契约 → 退出码契约 → 复核 → 测试 → 实测 → 文档」收口，证据见附录 A.6。**结论：阶段 0/1 维持 ✅；阶段 2/3 由 ✅ 回退为 ◐；阶段 4 维持 ◐**——标 ✅ 所需的取证尚未完成，不能用「功能已写好」代替验收。
+
+### 11.2 下一步排队（顺序即优先级；数据隔离、正反例配对、第二项目接入、复跑能力永不裁剪）
+
+**P1 — 补齐已声明但无取证的验收项（在此完成前不开新功能）**
+
+1. **三入口一致性**：同一场景经 CLI / 工作台 / MCP 运行，用差异脚本逐字段比对 `result.json`；让 CI 在托管 Runner 上真正跑绿一轮并记录运行号。
+2. **步骤证据登记与核对**：`Attempt` 增加证据引用，内核用同一套 `verifyEvidenceRef` 核对——目前只有观察器证据被登记（A.5 限制 4）。
+3. **把 `claimDataRoot` 接进 `run`/`rerun` 产品路径**：§10「已有内容但无所有权标记的数据根目录拒绝运行」现在只在 core 测试里被执行（A.5 限制 5）。
+4. **≥3 个不同项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况。
+5. **预先标注的正常/故障案例集评估**，公开案例范围与误报样本，不用自评代替。
+6. **未参与开发的编程助手闭环**：仅靠 MCP/CLI 公开接口完成「读取失败 → 修改应用 → 复验」。
+
+**P2 — 阶段 4 剩余（P1 完成后再开工）**
+
+- 受控事件注入（模拟邮件/回调）、虚拟时间（仅限显式接入时钟的组件）、macOS 入矩阵、场景/适配器版本兼容自动化验证（旧场景跑新内核）、证据包脱敏检查、安装/升级/迁移/排障文档、seedRole 的内核实现（A.5 限制 1）。
+
 ---
 
-## 附录 A：验收证据（2026-09-29 实测记录，✅ 均有运行目录/退出码可查）
+## 附录 A：验收证据（2026-09-29 与 2026-10-10 实测记录，✅ 均有运行目录/退出码可查）
 
 ### A.1 阶段 0/1：正反例矩阵（退出码即契约）
 
@@ -268,6 +293,8 @@ CLI（已有）／工作台／MCP／CI
 | exam-cancel-waitlist | 退出码 0，3 断言全过 | — | 退出码 2，✗ 两规则 | 退出码 1，✗waitlist-declared-order |
 
 要点：候补顺序故障的检出依赖 `eqStr` 断言（协议 1.0 扩展，op+expected 交叉校验）与**两个候补者**（bob 队首、carol 队尾）——单候补队列下首位/末位递补状态同构，无法区分。booking 侧曾因场景步骤排序错误（carol 报名排在取消之后）导致故障无法区分，经时间线证据定位后修正。
+
+2026-10-10：上表已脚本化为 `scripts/positive-negative-matrix.mjs`（一条命令跑完 6 个 `check` + 各应用正确实现 + 四个故障开关 + `rerun`，判据为退出码 + 归因规则），实测 19/19 一致，见 A.6。矩阵中 `cancel-keeps-slot(-seat)` 一列两个应用均为退出码 2（证据缺失降级），与本文旧版 3.1 节表格中的「退出码 1」不一致——以 A.6 的实测为准。
 
 ### A.2 阶段 1 收尾四项
 
@@ -285,10 +312,63 @@ CLI（已有）／工作台／MCP／CI
 
 ### A.4 全仓测试
 
-npm test = **103/103 通过**（Windows）；Linux 侧除 adapter-sdk dist 未入 WSL 副本少计 4 项外全过。
+- 2026-09-29（Linux/WSL2）：`npm test` 99+ 项全过（除 adapter-sdk dist 未入 WSL 副本少计 4 项）。
+- **2026-10-10（Windows）**：`npm run verify` = typecheck + build + test，**121/121 通过，0 失败**；同一轮修复前的基线为 103 项中 99 通过 / 4 失败（`adapter-local-web` 的 overbooking 故障用例被新的 db 所有权拒绝规则打红；`cli` 的两项 `plan` 断言与新的「不猜默认场景」语义冲突；`workbench` 的草案回退断言与新语义冲突）。
 
 ### A.5 已知限制（如实记录，非完成暗示）
 
 1. 内核未向 setupEnv 传递 seedRole 种子（registerAccounts 走 JSON POST 与纯表单 fixture 不匹配）：角色"占用初始名额"的语义由场景**显式报名步骤**实现（方案 §3.3 规则 7 的完整内核实现为后续改进项）。
 2. cancel-keeps-slot(-seat) 故障在本 fixture 中为"取消完全无操作"，取消前后的可观察状态差仅剩候补队列不变，故含一个 inconclusive 断言，整体降级为退出码 2（方案 §10 允许的降级语义，违规均已归因）。
 3. macOS 支持未验证（方案 §2 表格约定：经实际验证后列入矩阵）。
+4. **步骤证据未登记、不参与核对**（2026-10-10 记录）：适配器把每步截图与 DOM 快照写进 `evidence/`，但 `Attempt` 没有证据字段，内核只登记观察器证据，因此 `result.json.evidence` 里只有 `sql-dump`；采集失败的步骤现在会在 `attempt.detail.evidenceError` 留痕，但**不会**使判定降级。§10「内核登记时核对文件存在」目前只覆盖观察器证据。修复方向见 §11.2 第 2 项。
+5. **`claimDataRoot` 未接入产品路径**（2026-10-10 发现）：§10「已有内容但无所有权标记的数据根目录拒绝运行」的实现只被 core 单测调用，`run`/`rerun` 从未调用它；产品路径上目前唯一的所有权防护是适配器拒绝已存在的 db 文件（§3.3 规则 13）。修复方向见 §11.2 第 3 项。
+6. 旧文档口径修正：`docs/接入耗时记录.md` 记录的 `exam-cancel-waitlist --fault cancel-keeps-seat` 退出码为 1，2026-10-10 实测为 2（与 A.1/A.6 一致）——该文档已追加更正说明。
+
+### A.6 2026-10-10 收口轮：改动、缺陷与实测证据
+
+**背景**：HEAD(`v0.1.0`) 自称「阶段 0–4 已验收」，但工作区存在 13 个文件、+223/-123 的未提交改动，且无对应测试与实测记录。本轮先建立基线再修复，全部证据如下。
+
+**基线（修复前，2026-10-10）**：`npm run verify` → 103 项测试，99 通过 / 4 失败：
+
+| 失败项 | 根因 | 处置 |
+| --- | --- | --- |
+| `adapter-local-web`「fault run (overbooking, capacity 0 free)」 | 用例预先手写 `data/app.db` 造"名额已满"，撞上新增的所有权铁律 | 用例改建前置条件走受支持路径：两个 `seedRole:"holder"` 角色占满容量 2（规则 7），断言改为 booking-count=4 / capacity-left=-2；新增「拒绝非本次运行所有的 db」独立用例 |
+| `cli`「no category clue…（needs-model）」 | 断言仍期望旧语义 `needsModel=false` + 回退到已保存场景 | 更新为「不选任何场景」：`needsModel=true`、`fallback=needs-model`、输出无 `scenario=` |
+| `cli`「no scenarios available at all -> config error (64)」 | 实现在空场景目录时返回 0 | `plan` 恢复两层退出码契约：空场景目录 → 64；有场景但无线索且无模型 → 0 且明确打印「未选择任何场景」 |
+| `workbench`「no category clue falls back to a saved scenario」 | 期望 200 + 猜测的草案 | 改为 422 + `rejected:"needs-model"`，并断言不产出任何草案 |
+
+**复核发现并修复的缺陷（review-agent 只读复核，缺陷优先）**：
+
+| 优先级 | 问题 | 修复 |
+| --- | --- | --- |
+| P0 | `core/src/engine.ts` 的 SQL 归一化正则写成 `/s+/g`（匹配字母 s），「单一口径」检查形同失效，且可能把含 `s` 的 SQL 改坏后**误判为相同** | 改为 `/\s+/g`，补「仅空白差异通过 / 实质差异 configError」双用例 |
+| P1 | 证据降级时把已有的更具体缺口（`["rows"]`/`["cell"]`）**覆盖**成 `["evidence-file"]`，丢失真实原因 | 改为并集去重（`Set`），补「两种缺口同时保留」用例 |
+| P2 | 适配器注释声称采集失败会被「内核证据核对」接住——步骤证据实际未被内核登记（见 A.5 限制 4） | 注释改为如实描述，并指向 §11.2 排队项 |
+| P2 | `missingEvidenceTypes` 被放宽为 `string[]`，校验器用 `vArray(vString)` 放行任意字符串 | 收紧为封闭联合 `MissingEvidenceType`（= `EVIDENCE_KINDS` ∪ 观察缺口 ∪ `"evidence-file"`），validator 改 `vEnum`，删除 `assert.ts` 里的 `as EvidenceKind[]` 强转 |
+| P3 | `EvidenceKind` 在 `result.ts` 与 `manifest.ts` 重复定义，易漂移 | `result.ts` 改为从 `EVIDENCE_KINDS` 派生，并补「两个列表不得漂移」的校验器测试 |
+| P3 | `engine.ts` 的 `// (b) Capability gate.` 分段注释在改动中被删 | 恢复 |
+
+**协议兼容性决策**：`missingEvidenceTypes` 的收紧是对 result 1.0 合法文档空间的**向后兼容强化**（所有既有生产方只产出这些取值），因此不升版本号；决策与理由记录于此。
+
+**本轮的实现改动（源码）**：
+
+- `packages/protocol/src/result.ts`：新增并导出 `MISSING_EVIDENCE_TYPES` / `MissingEvidenceType`；`RuleEvaluation.missingEvidenceTypes` 收紧；`EvidenceKind` 派生自 `EVIDENCE_KINDS`。
+- `packages/core/src/engine.ts`：修正 `normalizeSql`；落地「单一口径」校验（场景 SQL vs 清单 SQL，实质差异 → exit 64，且发生在创建运行目录之前）；观察阶段逐条核对证据引用并把不可用引用降级、具名 `evidence-file`；恢复 `(b)` 分段注释。
+- `packages/core/src/artifacts.ts`：新增 `verifyEvidenceRef`（路径逃逸 / 非文件 / 空文件占位 / sha256 不一致 → 具名原因）。
+- `packages/core/src/assert.ts`：删除本地重复联合与强转，改用 protocol 的 `MissingEvidenceType`。
+- `packages/adapter-local-web/src/adapter.ts`：拒绝已存在的 db 文件（内核转 blocked）；证据采集失败写 `attempt.detail.evidenceError` 并如实注释其可见性边界。
+- `packages/cli/src/commands/plan.ts`、`packages/planner/*`、`packages/workbench/src/server.ts`：无线索且无可用模型时**不选任何场景**（`PlanDecision.scenario` 可选、`needsModel=true` 如实输出），并恢复 `plan` 的两层退出码契约。
+
+**新增/更新的测试**：`packages/core/test/engine-evidence.test.ts`（新，伪适配器跨包测试）、`packages/protocol/test/result.test.ts`（新，校验器封闭集合）、`packages/core/test/artifacts.test.ts`（新增 `verifyEvidenceRef` 5 项）、`packages/adapter-local-web/test/adapter.test.ts`（新增 db 所有权拒绝、采集失败留痕）、`packages/cli/test/cli.test.ts`、`packages/workbench/test/workbench.test.ts`（过期断言更新）。
+
+**实测证据（Windows 本机，命令与退出码）**：
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm run verify` | **121/121 通过**（typecheck + build + test，0 失败） |
+| `node scripts/positive-negative-matrix.mjs` | **19/19 一致，0 偏差**；booking-normal `rc-mv26fipv-5e0a6502` → 0；booking-contend → 0；booking-cancel-waitlist → 0；booking-contend+overbooking → 1（✗ capacity-not-exceeded）；booking-cancel-waitlist+cancel-keeps-slot → 2；booking-cancel-waitlist+waitlist-order-wrong → 1；exam 三场景正确实现 → 0；exam-contend+overbooking → 1；exam-cancel-waitlist+cancel-keeps-seat → 2；exam-cancel-waitlist+waitlist-order-wrong → 1；6 个 `check` → 0 |
+| `node scripts/blocked-case.mjs` | PASS：exit 3、verdict=blocked、全部规则 not-evaluated（`rc-mv26jwuq-1bed4a6e`） |
+| `node scripts/serial-stability.mjs` | 10 次运行 exit codes = [0]，10/10 一致（新增的 db 所有权拒绝规则未干扰复跑） |
+| `rerun --run-id rc-mv26fipv-5e0a6502` | 新 `rc-mv26jkx6-41aa4159`，`previous=passed now=passed`，exit 0 |
+
+**诚实边界**：本轮**未**做任何阶段 2/3/4 的取证补齐，也未实现 §11.2 的排队项；因此阶段 2/3 的状态由 ✅ 回退为 ◐，阶段 4 维持 ◐。功能「已写好」不等于「已验收」。

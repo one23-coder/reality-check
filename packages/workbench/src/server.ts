@@ -314,7 +314,21 @@ async function handle(
     }
     try {
       const decision = await planScenario({ request: text, savedScenarios: scenarios });
-      const built = buildDraft(decision);
+      // 规则 9: no category clue and no usable model -> NO scenario is chosen;
+      // never fabricate a draft from a guessed default.
+      if (decision.scenario === undefined) {
+        json(res, 422, {
+          rejected: "needs-model",
+          decision: {
+            fallback: decision.fallback,
+            needsModel: decision.needsModel,
+            reason: decision.reason,
+            params: decision.params,
+          },
+        });
+        return;
+      }
+      const built = buildDraft({ scenario: decision.scenario });
       const payload: Record<string, unknown> = {
         isDraft: true,
         draft: built.draft,

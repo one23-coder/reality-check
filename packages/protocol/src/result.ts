@@ -11,6 +11,7 @@ import {
   vString,
   type V,
 } from "./v.js";
+import { EVIDENCE_KINDS } from "./manifest.js";
 import { RESULT_VERSION } from "./versions.js";
 
 export type Verdict = "passed" | "failed" | "inconclusive" | "blocked";
@@ -23,7 +24,10 @@ export const VERDICT_EXIT: Record<Verdict, 0 | 1 | 2 | 3> = {
   blocked: 3,
 };
 
-export type EvidenceKind = "screenshot" | "dom-snapshot" | "har" | "sql-dump" | "page-text";
+/** File evidence kinds — derived from the manifest's EVIDENCE_KINDS so the two
+ * lists cannot drift apart (result.ts is where the barrel re-exports the type
+ * from; manifest.ts keeps the runtime list). */
+export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 export interface EvidenceRef {
   kind: EvidenceKind;
@@ -46,6 +50,24 @@ export interface TimelineEvent {
   causation?: number;
 }
 
+/** 缺失证据类型的封闭全集 (方案 §10: 证据不完整时按「要求的类型逐项」核对并具名).
+ *
+ * = 证据文件类型 (EVIDENCE_KINDS, 单一来源) ∪ 观察结果自身的缺口
+ * (core/inconclusive: "rows"/"columns"/"numeric-cell"/"cell") ∪ 内核核对
+ * 证据引用失败 ("evidence-file", engine.ts). 刻意做成封闭联合而不是
+ * `string[]`: 结果校验器据此**拒收**无法归类的字符串，避免「随便填个占位值」
+ * 通过校验 (铁律: 证据缺失必须可归因到具体类型). */
+export const MISSING_EVIDENCE_TYPES = [
+  ...EVIDENCE_KINDS,
+  "rows",
+  "columns",
+  "numeric-cell",
+  "cell",
+  "evidence-file",
+] as const;
+
+export type MissingEvidenceType = (typeof MISSING_EVIDENCE_TYPES)[number];
+
 export interface RuleEvaluation {
   ruleId: string;
   verdict: "held" | "violated" | "not-evaluated" | "inconclusive";
@@ -54,7 +76,7 @@ export interface RuleEvaluation {
   expected: string;
   evidenceRefs: EvidenceRef[];
   /** Set only when verdict is inconclusive: which evidence types were missing. */
-  missingEvidenceTypes?: EvidenceKind[];
+  missingEvidenceTypes?: MissingEvidenceType[];
 }
 
 export interface EnvSummary {
@@ -127,7 +149,9 @@ const ruleEvalV = vObject<RuleEvaluation>({
     expected: vString,
     evidenceRefs: vArray(evidenceRefV),
   },
-  optional: { missingEvidenceTypes: vArray(vString) },
+  optional: {
+    missingEvidenceTypes: vArray(vEnum<MissingEvidenceType>(MISSING_EVIDENCE_TYPES)),
+  },
 });
 
 export const resultV: V<RunResult> = vObject<RunResult>({

@@ -270,17 +270,18 @@ describe("plan command", () => {
     assert.match(res.stdout, /scenario=booking-cancel-waitlist/);
   });
 
-  it("no category clue falls back without guessing (needs-model path, still exit 0)", async () => {
+  it("no category clue and no usable model -> NO scenario chosen, never a guessed default (exit 0)", async () => {
     const dir = await makeTmp();
     const config = await writeConfig(dir, { scenariosDir: SCENARIOS_DIR });
     const res = await runCmd(planCommand, ["随便测个登月流程", "--config", config]);
     assert.equal(res.code, 0, res.stderr);
-    // scenarios exist, so the bounded planner falls back to a saved scenario
-    // instead of throwing; the decision is printed with needsModel=false and
-    // the model-unavailable fallback reason.
-    assert.match(res.stdout, /needsModel=false/);
-    assert.match(res.stdout, /fallback=model-error/);
-    assert.match(res.stdout, /reason=.*model unavailable/);
+    // Saved scenarios exist, but 规则 9 forbids guessing a default: the planner
+    // says needsModel and picks nothing at all (no `scenario=` line).
+    assert.match(res.stdout, /plan: no scenario chosen/);
+    assert.match(res.stdout, /needsModel=true/);
+    assert.match(res.stdout, /fallback=needs-model/);
+    assert.match(res.stdout, /reason=.*refusing to guess a default scenario/);
+    assert.doesNotMatch(res.stdout, /scenario=/);
   });
 
   it("no scenarios available at all -> config error (64)", async () => {

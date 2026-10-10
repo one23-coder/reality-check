@@ -4,7 +4,6 @@ import { pickScenario } from "../src/heuristic.js";
 import { planWithModel } from "../src/model.js";
 import { planScenario } from "../src/index.js";
 import type { ModelClient, PlanRequest } from "../src/types.js";
-import { PLACEHOLDER_SCENARIO } from "../src/types.js";
 import type { Scenario } from "@rc/protocol";
 
 function mkScenario(id: string): Scenario {
@@ -41,7 +40,7 @@ describe("pickScenario keyword heuristic", () => {
   it("normal category (zh + en) picks the saved 'normal' scenario", () => {
     for (const text of ["帮我报名普通场次", "please book a normal slot", "normal booking"]) {
       const d = pickScenario(req(text));
-      assert.equal(d.scenario.id, "booking-normal", text);
+      assert.equal(d.scenario?.id, "booking-normal", text);
       assert.equal(d.fallback, "heuristic");
       assert.equal(d.needsModel, false);
     }
@@ -50,14 +49,14 @@ describe("pickScenario keyword heuristic", () => {
   it("contend category (zh + en) picks the saved 'contend' scenario", () => {
     for (const text of ["两人争抢同一个名额", "3人抢票", "everyone race for the last seat", "contend for it"]) {
       const d = pickScenario(req(text));
-      assert.equal(d.scenario.id, "booking-contend", text);
+      assert.equal(d.scenario?.id, "booking-contend", text);
     }
   });
 
   it("cancel-waitlist category (zh + en) picks the saved 'cancel-waitlist' scenario", () => {
     for (const text of ["取消订单进入候补", "cancel my order", "put me on the waitlist", "候补排队"]) {
       const d = pickScenario(req(text));
-      assert.equal(d.scenario.id, "booking-cancel-waitlist", text);
+      assert.equal(d.scenario?.id, "booking-cancel-waitlist", text);
     }
   });
 
@@ -68,37 +67,37 @@ describe("pickScenario keyword heuristic", () => {
     assert.deepEqual(pickScenario(req("帮我报名")).params, {});
   });
 
-  it("no category clue -> needsModel, no default scenario guessed", () => {
+  it("no category clue -> needsModel with NO scenario (no default guessed, 方案 §3.3 规则 9)", () => {
     const d = pickScenario(req("随便看看这个系统"));
     assert.equal(d.needsModel, true);
     assert.equal(d.fallback, "needs-model");
-    assert.equal(d.scenario, PLACEHOLDER_SCENARIO);
+    assert.equal(d.scenario, undefined);
     assert.match(d.reason, /no category clue/);
   });
 
-  it("clue matches but no saved scenario contains the token -> needsModel", () => {
+  it("clue matches but no saved scenario contains the token -> needsModel with NO scenario", () => {
     const d = pickScenario(req("3人抢票", [mkScenario("booking-normal")]));
     assert.equal(d.needsModel, true);
     assert.equal(d.fallback, "needs-model");
-    assert.equal(d.scenario, PLACEHOLDER_SCENARIO);
+    assert.equal(d.scenario, undefined);
     assert.match(d.reason, /no saved scenario id contains "contend"/);
   });
 });
 
 describe("planWithModel fallbacks", () => {
-  it("model undefined -> keyword-closest saved scenario with model-error reason", async () => {
+  it("model undefined with a clue -> keyword-closest saved scenario with model-error reason", async () => {
     const d = await planWithModel(req("3人抢票"), BUDGET);
     assert.equal(d.fallback, "model-error");
     assert.equal(d.needsModel, false);
-    assert.equal(d.scenario.id, "booking-contend");
+    assert.equal(d.scenario?.id, "booking-contend");
     assert.match(d.reason, /no model client configured/);
   });
 
-  it("model undefined and no clue -> first saved scenario with model-error reason", async () => {
+  it("model undefined and no clue -> needsModel with NO scenario, never a guessed default", async () => {
     const d = await planWithModel(req("随便看看"), BUDGET);
-    assert.equal(d.fallback, "model-error");
-    assert.equal(d.scenario.id, "booking-normal");
-    assert.match(d.reason, /no model client configured/);
+    assert.equal(d.needsModel, true);
+    assert.equal(d.scenario, undefined);
+    assert.match(d.reason, /refusing to guess a default scenario/);
   });
 
   it("model that throws -> model-error with distinct reason", async () => {
@@ -110,7 +109,7 @@ describe("planWithModel fallbacks", () => {
     const d = await planWithModel(req("3人抢票", SAVED, boom), BUDGET);
     assert.equal(d.fallback, "model-error");
     assert.equal(d.needsModel, false);
-    assert.equal(d.scenario.id, "booking-contend");
+    assert.equal(d.scenario?.id, "booking-contend");
     assert.match(d.reason, /model call failed: boom/);
   });
 
@@ -119,7 +118,7 @@ describe("planWithModel fallbacks", () => {
     const d = await planWithModel(req("3人抢票", SAVED, hangs), { timeoutMs: 30, maxTokens: 16 });
     assert.equal(d.fallback, "model-error");
     assert.equal(d.needsModel, false);
-    assert.equal(d.scenario.id, "booking-contend");
+    assert.equal(d.scenario?.id, "booking-contend");
     assert.match(d.reason, /timed out after 30ms/);
   });
 
@@ -144,7 +143,7 @@ describe("planWithModel fallbacks", () => {
     const d = await planWithModel(req("3人抢票", SAVED, unknown), BUDGET);
     assert.equal(d.fallback, "model-error");
     assert.equal(d.needsModel, false);
-    assert.equal(d.scenario.id, "booking-contend");
+    assert.equal(d.scenario?.id, "booking-contend");
     assert.match(d.reason, /unknown scenario id "no-such-scenario"/);
   });
 
@@ -174,7 +173,7 @@ describe("planWithModel fallbacks", () => {
     };
     const d = await planWithModel(req("帮我安排一下", SAVED, ok), BUDGET);
     assert.equal(d.needsModel, false);
-    assert.equal(d.scenario.id, "booking-contend");
+    assert.equal(d.scenario?.id, "booking-contend");
     assert.deepEqual(d.params, { count: 3 });
   });
 });
@@ -183,14 +182,15 @@ describe("planScenario", () => {
   it("keyword hit resolves without touching the model", async () => {
     const d = await planScenario(req("3人抢票"));
     assert.equal(d.fallback, "heuristic");
-    assert.equal(d.scenario.id, "booking-contend");
+    assert.equal(d.scenario?.id, "booking-contend");
     assert.equal(d.needsModel, false);
   });
 
-  it("needs-model with no model available resolves onto a saved scenario, never throws", async () => {
+  it("no clue and no model -> needsModel with NO scenario, never throws, never guesses (规则 9)", async () => {
     const d = await planScenario(req("随便看看"));
-    assert.equal(d.needsModel, false);
-    assert.equal(d.scenario.id, "booking-normal");
+    assert.equal(d.needsModel, true);
+    assert.equal(d.scenario, undefined);
+    assert.match(d.reason, /refusing to guess a default scenario/);
   });
 
   it("needs-model with a working model uses the bounded model path", async () => {
@@ -198,14 +198,13 @@ describe("planScenario", () => {
       complete: async () => JSON.stringify({ scenarioId: "booking-cancel-waitlist", params: {} }),
     };
     const d = await planScenario(req("帮我安排一下", SAVED, ok));
-    assert.equal(d.scenario.id, "booking-cancel-waitlist");
+    assert.equal(d.scenario?.id, "booking-cancel-waitlist");
     assert.match(d.reason, /bounded model selected/);
   });
 
-  it("empty savedScenarios and no model -> the package's single throw", async () => {
-    await assert.rejects(
-      planScenario(req("随便看看", [])),
-      (e: Error) => e.message === "no scenario available and model required",
-    );
+  it("empty savedScenarios and no clue -> needsModel decision (no throw, no scenario)", async () => {
+    const d = await planScenario(req("随便看看", []));
+    assert.equal(d.needsModel, true);
+    assert.equal(d.scenario, undefined);
   });
 });

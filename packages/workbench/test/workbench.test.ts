@@ -201,20 +201,20 @@ describe("workbench overrides and draft guards (no browser)", () => {
     );
   });
 
-  it("POST /api/draft with no category clue falls back to a saved scenario (model unavailable), never a guess", async () => {
+  it("POST /api/draft with no category clue and no usable model is rejected 422, never a guessed draft", async () => {
     const { status, body } = await api("POST", "/api/draft", { text: "随便测个登月流程" });
-    assert.equal(status, 200);
+    // 方案 §3.3 规则 9: 没有类别线索且模型不可用时，不猜默认场景 —— 草案也不编。
+    assert.equal(status, 422);
     const payload = body as {
-      isDraft: boolean;
-      valid: boolean;
+      rejected: string;
+      draft?: unknown;
       decision: { fallback: string; needsModel: boolean; reason: string };
     };
-    assert.equal(payload.isDraft, true);
-    // 模型不可用时已有场景仍可产出草案（受限规划器的回退，不猜默认场景）。
-    assert.equal(payload.decision.fallback, "model-error");
-    assert.equal(payload.decision.needsModel, false);
-    assert.match(payload.decision.reason, /model unavailable/);
-    assert.equal(payload.valid, true);
+    assert.equal(payload.rejected, "needs-model");
+    assert.equal(payload.draft, undefined, "no draft may be fabricated from a guessed default");
+    assert.equal(payload.decision.needsModel, true);
+    assert.equal(payload.decision.fallback, "needs-model");
+    assert.match(payload.decision.reason, /refusing to guess a default scenario/);
   });
 });
 

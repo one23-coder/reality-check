@@ -1,7 +1,6 @@
 // Keyword heuristic over the natural-language request (方案 §3.3 规则 9:
-// 没有类别线索时返回 needsModel 而不是猜默认场景).
 import type { Scenario } from "@rc/protocol";
-import { PLACEHOLDER_SCENARIO, type PlanDecision, type PlanRequest, type PlannerFallback } from "./types.js";
+import type { PlanDecision, PlanRequest, PlannerFallback } from "./types.js";
 
 interface Category {
   key: string;
@@ -49,6 +48,16 @@ function decision(
   return { scenario, params, fallback, needsModel, reason };
 }
 
+/** Needs-model decision: NO scenario is chosen — a missing clue must never
+ * masquerade as a guessed default (方案 §3.3 规则 9). */
+function decisionNoScenario(
+  fallback: PlannerFallback,
+  needsModel: boolean,
+  reason: string,
+): PlanDecision {
+  return { params: {}, fallback, needsModel, reason };
+}
+
 /**
  * Keyword-only decision. Returns a needs-model decision (never a guessed
  * default scenario) when there is no category clue, or when the clue matches
@@ -57,9 +66,7 @@ function decision(
 export function pickScenario(req: PlanRequest): PlanDecision {
   const category = pickCategory(req.request);
   if (!category) {
-    return decision(
-      PLACEHOLDER_SCENARIO,
-      {},
+    return decisionNoScenario(
       "needs-model",
       true,
       "no category clue in request; needs model to choose a scenario (no default is guessed)",
@@ -68,9 +75,7 @@ export function pickScenario(req: PlanRequest): PlanDecision {
   const idToken = category.idToken.toLowerCase();
   const match = req.savedScenarios.find((s) => s.id.toLowerCase().includes(idToken));
   if (!match) {
-    return decision(
-      PLACEHOLDER_SCENARIO,
-      {},
+    return decisionNoScenario(
       "needs-model",
       true,
       `category clue "${category.key}" matched but no saved scenario id contains "${category.idToken}"`,

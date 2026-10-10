@@ -9,18 +9,13 @@
  */
 import type {
   Assertion,
-  EvidenceKind,
   EvidenceRef,
+  MissingEvidenceType,
   RuleEvaluation,
   Verdict,
 } from "@rc/protocol";
 import { internalError } from "./errors.js";
 import type { ObserverReading } from "./adapter.js";
-
-// The protocol types missingEvidenceTypes as EvidenceKind[] (file kinds), but
-// the schema validator accepts any string: observation gaps ("rows",
-// "columns", "numeric-cell") are evidence-type gaps of the reading itself.
-export type MissingEvidence = EvidenceKind | "rows" | "columns" | "numeric-cell" | "cell";
 
 type Cmp = (observed: number, expected: number) => boolean;
 
@@ -89,7 +84,7 @@ export function evaluateAssertion(
 function inconclusive(
   assertion: Assertion,
   evidence: EvidenceRef[],
-  missing: MissingEvidence[],
+  missing: MissingEvidenceType[],
 ): RuleEvaluation {
   return {
     ruleId: assertion.rule,
@@ -98,7 +93,7 @@ function inconclusive(
     observed: null,
     expected: `${assertion.op} ${assertion.value}`,
     evidenceRefs: evidence,
-    missingEvidenceTypes: missing as EvidenceKind[],
+    missingEvidenceTypes: missing,
   };
 }
 

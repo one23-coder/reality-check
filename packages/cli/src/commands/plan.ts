@@ -1,11 +1,13 @@
 /** `reality-check plan "<自然语言描述>"` — 受限规划器入口 (方案 §3.3 规则 9).
  *
  * Loads every saved scenario from scenariosDir (validating each), asks the
- * planner to pick one, and prints the decision. The planner's single throw
- * (no scenarios available and model required) maps to exit 64; planning
- * itself never guesses a default scenario without a category clue.
+ * planner to pick one, and prints the decision. Two-layer exit contract:
+ * - NO saved scenario at all is a configuration error (exit 64) — there is
+ *   nothing the tool could ever run;
+ * - saved scenarios exist but there is no category clue and no usable model:
+ *   nothing is chosen (needsModel=true) and the output says so — a default is
+ *   never guessed, and an empty selection is not dressed up as an error.
  */
-import type { PlanDecision } from "@rc/planner";
 import { planScenario } from "@rc/planner";
 import {
   configError,
@@ -35,17 +37,19 @@ async function planCommandImpl(args: string[]): Promise<CommandResult> {
   }
   const config = loadConfig(flagString(parsed, "config"));
   const savedScenarios = loadScenarioDir(config.scenariosDir);
+  // Layer 1: an empty scenarios dir is a configuration error (exit 64) — the
+  // tool is being asked to plan against a project it has nothing to run on.
+  if (savedScenarios.length === 0)
+    throw configError(
+      `planning failed: no scenario available in ${config.scenariosDir}; add a scenario first`,
+    );
 
-  let decision: PlanDecision;
-  try {
-    decision = await planScenario({ request, savedScenarios });
-  } catch (e) {
-    // The planner's ONLY throw: no scenario available and model required.
-    throw configError(`planning failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  const decision = await planScenario({ request, savedScenarios });
 
   const stdout = [
-    `plan: scenario=${decision.scenario.id}`,
+    decision.scenario !== undefined
+      ? `plan: scenario=${decision.scenario.id}`
+      : "plan: no scenario chosen (no category clue and no usable model; a default is never guessed)",
     `params=${JSON.stringify(decision.params)}`,
     `fallback=${decision.fallback}`,
     `needsModel=${decision.needsModel}`,

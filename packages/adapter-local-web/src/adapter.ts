@@ -138,6 +138,7 @@ export class LocalWebAdapter {
   private dbPath: string | null = null;
   private dataRoot: string | null = null;
   private createdDataRoot = false;
+  private dbCreated = false;
   private runDir: string | null = null;
   private seed = 0;
   private appVersion = "unknown";
@@ -178,6 +179,15 @@ export class LocalWebAdapter {
       await fsp.mkdir(opts.dataRoot, { recursive: true });
       this.dataRoot = opts.dataRoot;
       this.dbPath = path.join(opts.dataRoot, "app.db");
+      // 所有权铁律: the app must never write into a DB file this run does not
+      // own. If a file with our chosen name already exists, refuse — the
+      // engine turns this into a blocked verdict, never a business result.
+      if (fs.existsSync(this.dbPath)) {
+        throw new Error(
+          `database file "${this.dbPath}" already exists and is not owned by this run; refusing to start (方案 §10)`,
+        );
+      }
+      this.dbCreated = true;
 
       const seedRoles = opts.roles ?? [];
       const env: NodeJS.ProcessEnv = {
@@ -288,7 +298,15 @@ export class LocalWebAdapter {
         detail: { error: err instanceof Error ? err.message : String(err) },
       };
     }
-    await this.captureStepEvidence(step, n).catch(() => {});
+    await this.captureStepEvidence(step, n).catch((e: unknown) => {
+      // 方案 §4: evidence gaps must be visible. A failed capture is recorded on
+      // the attempt instead of being swallowed. NOTE: step evidence is not (yet)
+      // registered as an EvidenceRef in result.json — only observer evidence is
+      // verified by the kernel — so this detail field is the only durable trace.
+      // See 方案 §11 排队项「步骤证据登记与核对」.
+      const reason = e instanceof Error ? e.message : String(e);
+      attempt.detail = { ...(attempt.detail ?? {}), evidenceError: reason };
+    });
     return attempt;
   }
 
@@ -324,7 +342,12 @@ export class LocalWebAdapter {
     for (let k = 0; k < deferred.length; k++) {
       const d = deferred[k] as { index: number; step: Step; n: number };
       attempts[d.index] = settled[k] as Attempt;
-      await this.captureStepEvidence(d.step, d.n).catch(() => {});
+      await this.captureStepEvidence(d.step, d.n).catch((e: unknown) => {
+        const reason = e instanceof Error ? e.message : String(e);
+        const target = attempts[d.index];
+        if (target !== undefined)
+          target.detail = { ...(target.detail ?? {}), evidenceError: reason };
+      });
     }
     return attempts;
   }
@@ -449,13 +472,14 @@ export class LocalWebAdapter {
     }
     this.pages.clear();
 
-    if (this.dbPath) {
+    if (this.dbPath && this.dbCreated) {
       for (const f of [this.dbPath, `${this.dbPath}-wal`, `${this.dbPath}-shm`]) {
         await fsp.rm(f, { force: true });
       }
       removed.push(this.dbPath);
-      this.dbPath = null;
     }
+    this.dbPath = null;
+    this.dbCreated = false;
     if (this.dataRoot && this.createdDataRoot) {
       await fsp.rm(this.dataRoot, { recursive: true, force: true });
       removed.push(this.dataRoot);
