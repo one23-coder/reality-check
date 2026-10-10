@@ -58,6 +58,12 @@ jobs:
       - name: Positive/negative matrix (方案 §0, exit code is the contract)
         run: node scripts/positive-negative-matrix.mjs
 
+      - name: Diagnostic benchmark (方案 §6, pre-labeled case set)
+        run: node scripts/diagnostic-benchmark.mjs
+
+      - name: External agent loop (方案 §7, public interfaces only)
+        run: node scripts/external-agent-loop.mjs
+
   clean-env-twice:
     name: clean-env-twice (two consecutive test rounds, one runner)
     runs-on: ubuntu-latest

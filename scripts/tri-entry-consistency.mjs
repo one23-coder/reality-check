@@ -15,6 +15,7 @@ import fsp from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { removeTempDir, shutdown } from "./lib/child-cleanup.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const CLI_MAIN = path.join(root, "packages/cli/dist/src/main.js");
@@ -25,6 +26,9 @@ const SCENARIO_ID = "booking-normal";
 const RUN_TIMEOUT_MS = 180_000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Every spawned entry process, shut down (and awaited) before temp cleanup —
+ * a live child keeps the run dir locked on Windows. */
+const children = [];
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -84,6 +88,7 @@ const results = {};
     [WB_MAIN, "--port", String(port), "--runs-dir", wbRuns, "--scenarios-dir", scenariosDir, "--app-path", APP],
     { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
   );
+  children.push(child);
   try {
     const base = `http://127.0.0.1:${port}`;
     const deadline = Date.now() + 30_000;
@@ -126,6 +131,7 @@ const results = {};
     cwd: project,
     stdio: ["pipe", "pipe", "pipe"],
   });
+  children.push(child);
   let buf = "";
   const pending = new Map();
   let nextId = 1;
@@ -260,5 +266,9 @@ console.log(
     : "tri-entry-consistency: MISMATCH — the three entries disagree on result semantics",
 );
 
-await fsp.rm(project, { recursive: true, force: true });
+// Teardown must never rewrite a successful comparison into a failed exit code.
+for (const child of children) await shutdown(child);
+if (!(await removeTempDir(project))) {
+  console.log(`note: temp dir left behind (still locked by the OS): ${project}`);
+}
 process.exit(identical ? 0 : 1);

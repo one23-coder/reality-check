@@ -92,8 +92,9 @@
       "scenario": "scenarios/exam-contend.json",
       "fault": "overbooking",
       "exitCode": 1,
-      "violatedRules": ["capacity-not-exceeded"],
-      "cleanRules": ["reservation-recorded"]
+      "violatedRules": ["capacity-not-exceeded", "reservation-recorded"],
+      "cleanRules": [],
+      "note": "修正于 2026-10-10（基准首次运行后）：exam-contend 的 exactly-one-winner 是 `eq 2`，overbooking 下 reservations=3 使该断言**确实**被违反；booking-contend 的同类断言是 `gte 2` 才不受牵连。首版标签误抄了 booking 侧的 cleanRules，属于标签错误（工具判定正确），已在基准报告里公开。"
     },
     {
       "id": "exam-cancel-waitlist-correct",

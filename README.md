@@ -65,9 +65,19 @@ node scripts/positive-negative-matrix.mjs
 # 三入口一致性：CLI / 工作台 HTTP / MCP stdio 跑同一场景，逐字段比对 result.json
 node scripts/tri-entry-consistency.mjs
 
+# 诊断能力基准：跑前冻结的 12 例标注案例集，统计漏报/误报并公开样本
+node scripts/diagnostic-benchmark.mjs
+
+# 外部助手闭环：仅用 MCP 公开接口 + 一次应用文本编辑（读失败 → 改应用 → 复验）
+node scripts/external-agent-loop.mjs
+
 # 环境缺失路径（退出码 3）与串行 10 次稳定性
 node scripts/blocked-case.mjs
 node scripts/serial-stability.mjs
+
+# 一键跑完上面全部门禁（顺序执行、任一失败即整体失败；--no-serial 跳过最慢的 10 连跑）
+npm run accept        # 完整
+npm run accept:fast   # 跳过串行稳定性
 ```
 
 ## 退出码契约
@@ -90,3 +100,5 @@ node scripts/serial-stability.mjs
 - **所有权**：内核在启动应用前认领数据根（`data/ownership.json`）；已有内容而无所有权标记 → blocked；应用库（`EnvSummary.dbPath`）登记进台账，`teardown` 由台账兜底清理，只清理 `ownedBy === runId` 的资源；适配器另拒绝已存在的 db 文件。
 - **角色声明**：场景角色的 `seedRole`（`holder` 占用初始名额）由内核在启动时交给适配器兑现——`registerAccounts` 之后无法追溯占位（规则 7）。
 - **模型边界**：无类别线索返回 `needsModel`；模型不可用/超时/预算耗尽/未知场景一律回退已保存场景。**没有类别线索且无可用模型时不选任何场景**（不猜默认），`plan` 在此情形下退出码 0 并如实打印，而空场景目录是配置错误（exit 64）；全程不执行自由生成的脚本。
+- **步骤执行失败 ≠ 业务结论**：任何一步 `outcome=error`（导航/点击根本没执行）一律判 `blocked`（exit 3）并在 `blocked` 事件里点名步骤——否则断言是在「未被触碰的状态」上求值，极端情况下会假通过。`rejected` / `no-nav` 是应用对已执行步骤的诚实回答，属业务信息，照常进入断言。
+- **可归因的基础设施失败**：适配器监听浏览器断开、检查页面是否已被关闭，把原因写进 `attempt.detail.error`（而不是抛出一句无从下手的 Playwright 错误）；不做自动恢复——重建上下文会丢登录会话，硬造成功比失败更危险。

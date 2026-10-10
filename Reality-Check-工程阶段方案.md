@@ -64,7 +64,7 @@
 | 取消候补递补 | 退出码 0，5/5 断言通过 | — | 退出码 1，✗ cancel-releases-slot、✗ waitlist-declared-order（3 断言失败） | 退出码 1，✗ waitlist-declared-order（4 断言通过不受牵连） |
 
 - **CLI 五命令**：`check`（结构校验+能力检查，六场景全过）、`run`、`rerun --run-id`（同种子重建环境重跑，实测正确版本重跑仍通过）、`export`（列出历史运行及复跑命令）、`plan`（受限规划器；无线索且无可用模型时不选任何场景，空场景目录为配置错误）。
-- **测试**：**124 项全过（2026-10-10 二轮 `npm run verify` 实测；首轮基线为 103 项中 99 通过 / 4 失败）**。新增测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、角色声明传递、步骤证据登记与剔除、数据根台账与兜底清理、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合 + `Attempt.evidence` 校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」「证据采集失败必须留痕」「每个步骤交回可核对证据引用」三项。
+- **测试**：**126 项全过（2026-10-10 三轮 `npm run verify` 实测；首轮基线为 103 项中 99 通过 / 4 失败）**。三轮新增「步骤执行失败 ⇒ blocked / rejected 照常判定」两项单测。新增测试文件与分组：`packages/core/test/engine-evidence.test.ts`（伪适配器跨包测试：单一口径 SQL 校验、证据引用核对与降级、角色声明传递、步骤证据登记与剔除、数据根台账与兜底清理、blocked 不抛异常）、`packages/protocol/test/result.test.ts`（缺失证据类型封闭集合 + `Attempt.evidence` 校验器测试）、`packages/core/test/artifacts.test.ts` 新增 `RunArtifacts.verifyEvidenceRef` 分组、`packages/adapter-local-web/test/adapter.test.ts` 新增「拒绝非本次运行所有的 db」「证据采集失败必须留痕」「每个步骤交回可核对证据引用」三项。
 - **退出码契约实测**：0（通过）、1（业务违规）、2（证据不完整降级）、3（blocked，`scripts/blocked-case.mjs` PASS）、64（配置非法，含 BOM JSON 被拒、空场景目录的 `plan`）、70（工具自身异常）。
 - **正反例配对矩阵已脚本化（2026-10-10）**：`scripts/positive-negative-matrix.mjs` 一条命令跑完 19 个用例（6 场景 `check` + booking/exam 正确实现 + 四个故障开关 + `rerun`），实测 19/19 退出码与归因规则一致，见附录 A.6。
 - **内核级保证（2026-10-10 两轮累计）**：内核逐条核对适配器交回的证据引用（存在性 + 哈希 + 路径），观察器证据失败即降级 inconclusive 并具名 `evidence-file`，步骤证据失败即剔除并具名；场景观察器 SQL 与适配器清单 SQL 必须同源（单一口径，仅空白差异被容忍）；适配器拒绝使用不属于本次运行的 db 文件；内核在启动前认领数据根并把应用库登记进台账；场景声明的 `seedRole` 由内核交给 `setupEnv` 真实兑现（见 §3.3 规则 11–16）。
@@ -97,6 +97,8 @@
 14. **`missingEvidenceTypes` 是封闭集合，不是 `string[]`**（2026-10-10 补）：证据缺口必须能归因到具体类型，结果校验器拒收无法归类的字符串，防止用占位值糊过校验。
 15. **步骤证据与观察器证据走同一道核对闸门**（2026-10-10 二轮）：`Attempt.evidence` 由适配器采集并落盘，内核逐条核对（在本次运行的 `evidence/` 内、非空、sha256 一致）后才写进 `result.json`；核对失败的引用被剔除并在时间线具名。步骤证据**不是断言主体**——它证明「这一步真的发生过」，不改变判定。
 16. **内核在启动应用之前认领数据根**（2026-10-10 二轮）：`claimDataRoot(runDir/data, runId)` 写 `ownership.json`；已有内容而无所有权标记 → blocked（exit 3，绝不冒充业务结论）。适配器在 `EnvSummary.dbPath` 报告的应用库会被登记进台账，`teardown` 后由台账做第二道清理兜底。此前 `claimDataRoot` 只被单测调用，产品路径无人执行。
+17. **步骤「执行失败」不是业务结论**（2026-10-10 三轮，基准实测逼出来的）：`Attempt.outcome === "error"` 意味着这一步根本没发生，此时的业务断言在**未被触碰的状态**上求值，甚至可能因初始状态恰好满足期望而报 `passed`——那是对一次并未发生的运行下结论。因此任何 error 步骤一律 blocked（exit 3）并在 `blocked` 事件里列出步骤 id；而 `rejected` / `no-nav` 是应用对**已执行**步骤的诚实回答，属于业务信息，照常进入断言（规则 6）。
+18. **基础设施失败必须可归因**（2026-10-10 三轮）：Chromium 中途断开（实测 12 连跑中偶发 1 次）此前只会表现为一句 `page.goto: Target page, context or browser has been closed`，无法与场景缺陷区分。现在适配器监听 `disconnected`、检查 `page.isClosed()`，并把原因写进 `attempt.detail.error`（「Chromium disconnected mid-run … 环境/工具失败」）；同时用启动参数抑制后台页节流。**不做**自动恢复：重建上下文会丢登录会话，硬造成功比失败更危险。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -276,14 +278,44 @@ CLI（已有）／工作台／MCP／CI
 
 **P1 — 剩余取证项（在此完成前不开新功能）**
 
-1. **CI 托管 Runner 实跑绿的记录**：把 `npm test` / 三入口 / 矩阵的运行号写进附录 A。
-2. **≥3 个不同项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况。
-3. **预先标注的正常/故障案例集评估**，公开案例范围与误报样本，不用自评代替。
-4. **未参与开发的编程助手闭环**：仅靠 MCP/CLI 公开接口完成「读取失败 → 修改应用 → 复验」。
+1. **CI 托管 Runner 实跑绿的记录**：把 `npm test` / 三入口 / 矩阵 / 基准的运行号写进附录 A（工作流步骤已就位，缺 GitHub Runner 执行）。
+2. **≥3 个真实外部项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况；需要外部输入，无法自证。
+3. ~~预先标注的正常/故障案例集评估~~ —— **已完成**：`fixtures/diagnostic-cases.json` + `scripts/diagnostic-benchmark.mjs`，12/12、漏报 0、误报 0（A.8，含一处标签修正的公开）。
+4. ~~未参与开发的编程助手闭环~~ —— **已完成**：`scripts/external-agent-loop.mjs`（仅 MCP 公开接口 + 一次应用文本编辑，A.8）。
 
 **P2 — 阶段 4 剩余（P1 完成后再开工）**
 
-- 受控事件注入（模拟邮件/回调）、虚拟时间（仅限显式接入时钟的组件）、macOS 入矩阵、场景/适配器版本兼容自动化验证（旧场景跑新内核）、证据包脱敏检查、安装/升级/迁移/排障文档、seedRole 的内核实现（A.5 限制 1）。
+- 受控事件注入（模拟邮件/回调）、虚拟时间（仅限显式接入时钟的组件）、macOS 入矩阵、场景/适配器版本兼容自动化验证（旧场景跑新内核）、证据包脱敏检查、安装/升级/迁移/排障文档。
+
+**已知基础设施风险（不是业务结论问题，但影响可用性）**
+
+- Chromium 在连续多次运行中偶发中途断开（2026-10-10 观测：一次 12 连跑中出现 1 次，单独重复 6 次为 0 次）。已做两件事：① 步骤执行失败一律判 blocked（绝不产出业务结论，见 §3.3 规则 17），② 加启动参数抑制后台页节流 + `disconnected` 监听，使失败**可归因**（`attempt.detail.error` 直接写「Chromium disconnected mid-run」）。仍未做：浏览器崩溃后的自动恢复（会丢失登录会话，属于独立课题），因此该风险以「blocked + 明确原因」暴露，而非静默降级。
+
+---
+
+## 12. 「完美」的判据（完成定义，可逐条检验）
+
+本项目里「完美」不是「功能都写好了」，而是下面这张表**全部为 ✅ 且证据可复现**（一条命令 `npm run accept` 即可重跑绝大多数项）。任何一行是 ◐/⬜，「完美」就不成立——这一点不由自评决定，由证据决定。
+
+| # | 判据（可检验） | 现状 | 证据 / 缺口 |
+| --- | --- | --- | --- |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 126/126（2026-10-10 二轮） |
+| 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
+| 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
+| 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
+| 5 | 未参与开发的助手仅靠公开接口走通「读失败 → 改应用 → 复验」 | ✅ | `scripts/external-agent-loop.mjs`：failed → 文本编辑应用副本 → rerun passed（故障开关全程未变） |
+| 6 | 环境/工具失败不冒充业务结论（blocked 路径） | ✅ | `scripts/blocked-case.mjs` PASS；步骤执行失败亦判 blocked（规则 17） |
+| 7 | 复跑稳定：固定场景连续 10 次结论一致 | ✅ | `scripts/serial-stability.mjs` 10/10 |
+| 8 | 第二个独立应用仅凭文档接入且内核零改动；30 分钟接入耗时 | ✅ | `docs/接入耗时记录.md`；本轮因规则 7 落地使接入更简单（声明式占位） |
+| 9 | 证据链闭环：采集即落盘 → 内核逐条核对 → 报告可回溯 | ✅ | 观察器证据与步骤证据同闸门；`result.json.evidence` 与 `evidence/` 一一对应（A.7） |
+| 10 | 数据隔离：只清理台账内资源；无标记数据根拒绝运行 | ✅ | 内核启动前 `claimDataRoot` + 台账兜底清理（A.7）；适配器拒绝非本次运行的 db |
+| 11 | Linux 行为与 Windows 一致 | ◐ | WSL2 记录在 A.2；本轮新增的步骤证据/台账未在 Linux 复跑 |
+| 12 | CI 在托管 Runner 上真正跑绿（含三入口与矩阵） | ◐ | 工作流已加入步骤，缺 GitHub Runner 的运行号 |
+| 13 | ≥3 个**真实外部项目**试用，记录耗时/发现/误报/复用 | ⬜ | 仓库内只有 2 个自带 fixture；需要外部输入，无法自证 |
+| 14 | macOS 支持经实际验证后入矩阵 | ⬜ | 需要 macOS 机器 |
+| 15 | 受控事件注入（邮件/回调）、虚拟时间、脱敏导出、安装/升级/迁移/排障文档 | ⬜ | 阶段 4 未开工的明确范围 |
+
+**结论（诚实版）**：1–10 已达「可复现的证据链」标准；11–12 缺环境/托管运行号；13–15 缺**外部输入**（外部项目、macOS、阶段 4 功能）——这些不是再写几行代码就能变绿的，所以「完美」在当前能力边界内 = 「1–10 持续为 ✅ 且任何一次改动都重跑全链」，而 13–15 属于需要你提供资源才能推进的项。
 
 ---
 
@@ -404,3 +436,28 @@ CLI（已有）／工作台／MCP／CI
 **二轮同时修正的文档不一致**：`scenarios/exam-cancel-waitlist.json` 的 `description` 仍写着「协议 1.0 无字符串断言」的旧局限，而同文件的断言早已使用 `reservation-holder` + `eqStr`（`dcb8c31` 引入时漏改描述）——已改写为与断言一致。
 
 **边界（仍算限制）**：步骤证据只证明「这一步真的发生过」，**不参与判定**（断言主体只走观察器证据）；缺失步骤证据不会把通过降级。这是刻意的分工，不是漏洞。
+
+### A.8 2026-10-10 三轮：用「能力评估」检验工具本身（基准第一次运行就抓到三件事）
+
+**动机**：前两轮都在证明「工具能发现应用的缺陷」。第三轮换成检验**工具自己的诊断能力**：先冻结一份标注案例集，再让工具去跑——标签不是我事后挑的结论，而是 fixture 的既定语义。
+
+**基准首跑结果（12 例，`scripts/diagnostic-benchmark.mjs`）→ 10/12**，三个发现逐个查证如下：
+
+1. **标签错误（工具是对的）**：`exam-contend-overbooking` 报了 `reservation-recorded` 违规，我最初的标签把它列为「不得误报」。查证：exam-contend 的 `exactly-one-winner` 是 `eq 2`，overbooking 下 reservations=3 —— 该断言**确实**被违反（booking 侧同类断言是 `gte 2` 才不受牵连，我抄错了）。→ 修正标签并在案例集文件里写明修正原因与日期（误报样本公开）。
+2. **健全性漏洞（工具是错的，已修）**：`booking-cancel-waitlist-waitlist-order-wrong` 报 `inconclusive` 而非 `failed`。查证运行目录：`holder-nav-cancel` / `holder-submit-cancel` 两步 `outcome=error`（`page.goto: Target page, context or browser has been closed`），即**取消根本没执行**；工具却仍在「未触碰的状态」上求值并给出了业务口径结论。极端情况下这会变成**假通过**（初始状态恰好满足断言时）。→ 新增 §3.3 规则 17：任何 error 步骤一律 blocked（exit 3）并在 `blocked` 事件里点名步骤；`rejected`/`no-nav` 仍按业务信息处理。补 2 项针对性单测（error ⇒ blocked；rejected ⇒ 照常判定）。
+3. **基础设施偶发（已归因，未消除）**：同一用例单独重复 6 次全部 `failed`（exit 1），说明断开是**偶发**而非确定性缺陷。→ 新增 §3.3 规则 18：监听 `disconnected` + 检查 `page.isClosed()`，把原因写进 `attempt.detail.error`；加启动参数抑制后台页节流。**不做**自动恢复（重建上下文会丢会话，硬造成功比失败更危险），并如实记录复现率（12 连跑 1 次 / 单独 6 次 0 次）。
+
+**三轮新增交付物**
+
+| 文件 | 作用 |
+| --- | --- |
+| `fixtures/diagnostic-cases.json` | 跑前冻结的 12 例标注案例集（标签 = 退出码 + 必须检出 / 不得误报的规则）+ 范围与限制公开 |
+| `scripts/diagnostic-benchmark.mjs` | 比对标签并统计漏报/误报，公开误报/漏报样本（§6「不用自评代替」） |
+| `scripts/external-agent-loop.mjs` | 仅用 MCP 公开接口 + 一次应用文本编辑走通「读失败 → 改应用 → 复验」（§7 外部助手闭环） |
+| `scripts/acceptance.mjs`（`npm run accept` / `accept:fast`） | 一键验收门禁：把 §12 清单里可自动化的项串成一条命令，任一失败即整体失败 |
+
+**三轮实测**：`npm run verify` 126/126；`diagnostic-benchmark` 12/12（漏报 0、误报 0）；`positive-negative-matrix` 19/19；`tri-entry-consistency` 三入口一致；`external-agent-loop` OK（`rc-mv28x3mg-5fa0df83`：failed → 修应用 → rerun passed）；`blocked-case` PASS；`serial-stability` 10/10。
+
+**诚实边界**：`npm run accept` 的**一次性全链运行**（含 10 次串行稳定性）尚未完整跑完一遍（各门禁已分别全绿）；`acceptance.mjs` 本身只做「按顺序调用 + 汇总退出码」，不含任何判定逻辑，避免出现第二个真相来源。
+
+**同时修掉的一处「退出码说谎」**：`tri-entry-consistency.mjs` 的比对结论正确，但结束时清理临时目录在 Windows 上撞到文件锁（子进程句柄未释放）抛出 EBUSY，把成功改写成 exit 1。现抽出 `scripts/lib/child-cleanup.mjs`（等子进程退出 + 重试清理 + 清理失败只提示不改判），三入口脚本与闭环脚本共用；三入口脚本连续 3 次实测 exit 0。

@@ -151,6 +151,18 @@ class FakeAdapter implements LocalWebAdapterV1 {
       op: step.op,
       outcome: "completed",
     };
+    if (this.behaviour.has("step-error")) {
+      return {
+        stepId: step.id,
+        actor: step.actor,
+        op: step.op,
+        outcome: "error",
+        detail: { error: "fake adapter: step could not be executed" },
+      };
+    }
+    if (this.behaviour.has("step-rejected")) {
+      return { stepId: step.id, actor: step.actor, op: step.op, outcome: "rejected" };
+    }
     if (this.behaviour.has("step-evidence")) {
       // one ref whose bytes are really on disk + one ref that was never written
       attempt.evidence = [await writeEvidence(ctx.runDir, `step-${step.id}.json`, step.id), ghostRef()];
@@ -329,6 +341,38 @@ describe("证据引用核对 (方案 §4 铁律 3 + §10 降级)", () => {
     assert.equal(result.verdict, "blocked");
     assert.equal(result.ruleEvaluations[0]?.verdict, "not-evaluated");
     assert.equal(adapter.teardowns, 1, "teardown must run even for a blocked run");
+  });
+});
+
+describe("步骤执行失败 ⇒ blocked，绝不产出业务结论 (方案 §10)", () => {
+  it("blocks the run when a step could not be executed, naming the step", async () => {
+    const runsRoot = await makeRunsRoot();
+    // A step that errors means the business action never happened: the
+    // untouched state could satisfy the assertions by accident, and reporting
+    // "passed" there would be a claim about a run that did not take place.
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, [
+      "step-error",
+    ]);
+    const result = await executeScenario(scenario(), adapter, { runsRoot });
+    assert.equal(result.verdict, "blocked");
+    assert.equal(result.ruleEvaluations[0]?.verdict, "not-evaluated");
+    assert.equal(result.attempts[0]?.outcome, "error");
+    const blockedEvent = result.timeline.find((e) => e.kind === "blocked");
+    assert.ok(blockedEvent, "a blocked event must name the failing stage");
+    assert.equal(blockedEvent.detail["stage"], "steps");
+    assert.deepEqual(blockedEvent.detail["steps"], ["s1"]);
+  });
+
+  it("keeps a rejected step as a business-observable outcome (not blocked)", async () => {
+    const runsRoot = await makeRunsRoot();
+    // "rejected" is the app's honest answer to a step that DID execute — that
+    // is business information, so the run must still produce a verdict.
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, [
+      "step-rejected",
+    ]);
+    const result = await executeScenario(scenario(), adapter, { runsRoot });
+    assert.equal(result.verdict, "passed");
+    assert.equal(result.attempts[0]?.outcome, "rejected");
   });
 });
 

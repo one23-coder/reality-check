@@ -316,6 +316,23 @@ export async function executeScenario(
       }
     }
 
+    // (f2) A step that could not be EXECUTED destroys the scenario's premise:
+    // the business actions never happened, so any verdict derived from the
+    // resulting state would be a claim about a run that did not take place —
+    // including a false "passed" when the untouched state happens to satisfy
+    // the assertions. §10: that is an environment/tool failure, i.e. blocked
+    // (exit 3), never a business conclusion. "rejected" / "no-nav" are NOT
+    // errors: they are the app's honest answers to a step that did execute.
+    const erroredSteps = attempts.filter((a) => a.outcome === "error");
+    if (erroredSteps.length > 0) {
+      await artifacts.event("blocked", {
+        stage: "steps",
+        steps: erroredSteps.map((a) => a.stepId),
+        reasons: erroredSteps.map((a) => String((a.detail as { error?: unknown } | undefined)?.error ?? "unknown")),
+      });
+      return blockedResult("one or more scenario steps could not be executed");
+    }
+
     // (g) Observations.
     const readings = new Map<string, ObserverReading>();
     const observerSeq = new Map<string, number>();

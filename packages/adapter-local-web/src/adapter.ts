@@ -134,6 +134,9 @@ export class LocalWebAdapter {
   private browser: Browser | null = null;
   private child: ChildProcess | null = null;
   private readonly pages = new Map<string, PageEntry>();
+  /** Set when Chromium disconnects mid-run — every later step must fail with
+   * THIS reason instead of an anonymous "page has been closed" (归因要求). */
+  private browserCrashReason: string | null = null;
   private baseUrl = "";
   private dbPath: string | null = null;
   private dataRoot: string | null = null;
@@ -245,9 +248,27 @@ export class LocalWebAdapter {
       // Chromium 1194 is cached under %LOCALAPPDATA%\ms-playwright; resolve its
       // chrome.exe instead of letting playwright-core try to download browsers.
       const executablePath = findChromiumExecutable();
+      // Backgrounded pages in a multi-context run get throttled by Chromium and
+      // are the usual suspect when a page dies mid-scenario ("Target page,
+      // context or browser has been closed"). These flags keep every role's
+      // page live; the disconnect listener below makes a browser death
+      // attributable instead of surfacing as an anonymous step error.
       this.browser = await chromium.launch({
         headless: true,
+        args: [
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--disable-gpu",
+          "--no-first-run",
+        ],
         ...(executablePath ? { executablePath } : {}),
+      });
+      this.browser.on("disconnected", () => {
+        // Never null the handle here: teardown still wants to try closing it,
+        // and asserting the reason below is what makes the failure attributable.
+        this.browserCrashReason =
+          "Chromium disconnected mid-run (crash or killed) — 环境/工具失败，内核据此判 blocked，不是业务结论";
       });
     }
 
@@ -487,6 +508,7 @@ export class LocalWebAdapter {
   // ------------------------------------------------------------------ internals
 
   private assertUp(): void {
+    if (this.browserCrashReason !== null) throw new Error(this.browserCrashReason);
     if (!this.baseUrl || !this.browser) {
       throw new Error("adapter environment is not up; call setupEnv first");
     }
@@ -506,6 +528,12 @@ export class LocalWebAdapter {
       const page = await context.newPage();
       entry = { context, page };
       this.pages.set(actor, entry);
+    } else if (entry.page.isClosed()) {
+      // A renderer crash closes the page but keeps the browser handle alive
+      // (Playwright would otherwise report only "page has been closed").
+      throw new Error(
+        `actor "${actor}" lost its page mid-run (renderer crash or external close) — 环境/工具失败，内核据此判 blocked`,
+      );
     }
     return entry.page;
   }
