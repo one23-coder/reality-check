@@ -1,0 +1,126 @@
+{
+  "protocol": "diagnostic-cases/1.0",
+  "frozenAt": "2026-10-10",
+  "purpose": "诊断能力评估用的**预先标注**案例集（方案 §6 验收合格判定：不用自评代替，公开案例范围与误报样本）。标签来自 fixture 的既定语义（正确实现 / 各故障开关），在跑之前就冻结；脚本只负责比对，不参与判定。",
+  "scope": [
+    "两个自带参考应用：booking-app（course-1 容量 2）、exam-seat-app（exam-1 容量 2）",
+    "6 个场景 × 正确实现，以及每个故障开关在其对应场景上的注入",
+    "故障开关：overbooking | cancel-keeps-slot | cancel-keeps-seat | waitlist-order-wrong",
+    "不含：真实线上应用、并发时序抖动、网络异常、多进程竞争（这些不在本案例集范围内）"
+  ],
+  "labeling": {
+    "violatedRules": "该案例下**必须**被报为 violated 的规则 id（漏报 = 检出失败）",
+    "cleanRules": "该案例下**不得**被报为 violated 的规则 id（报了 = 误报/牵连）",
+    "exitCode": "该案例下 CLI 必须给出的退出码（0 passed / 1 failed / 2 inconclusive）"
+  },
+  "cases": [
+    {
+      "id": "booking-normal-correct",
+      "app": "booking-app",
+      "scenario": "scenarios/booking-normal.json",
+      "fault": null,
+      "exitCode": 0,
+      "violatedRules": [],
+      "cleanRules": ["booking-recorded", "capacity-not-exceeded"]
+    },
+    {
+      "id": "booking-contend-correct",
+      "app": "booking-app",
+      "scenario": "scenarios/booking-contend.json",
+      "fault": null,
+      "exitCode": 0,
+      "violatedRules": [],
+      "cleanRules": ["booking-recorded", "capacity-not-exceeded"]
+    },
+    {
+      "id": "booking-contend-overbooking",
+      "app": "booking-app",
+      "scenario": "scenarios/booking-contend.json",
+      "fault": "overbooking",
+      "exitCode": 1,
+      "violatedRules": ["capacity-not-exceeded"],
+      "cleanRules": ["booking-recorded"]
+    },
+    {
+      "id": "booking-cancel-waitlist-correct",
+      "app": "booking-app",
+      "scenario": "scenarios/booking-cancel-waitlist.json",
+      "fault": null,
+      "exitCode": 0,
+      "violatedRules": [],
+      "cleanRules": ["cancel-releases-slot", "waitlist-declared-order"]
+    },
+    {
+      "id": "booking-cancel-waitlist-cancel-keeps-slot",
+      "app": "booking-app",
+      "scenario": "scenarios/booking-cancel-waitlist.json",
+      "fault": "cancel-keeps-slot",
+      "exitCode": 2,
+      "violatedRules": ["cancel-releases-slot", "waitlist-declared-order"],
+      "cleanRules": []
+    },
+    {
+      "id": "booking-cancel-waitlist-waitlist-order-wrong",
+      "app": "booking-app",
+      "scenario": "scenarios/booking-cancel-waitlist.json",
+      "fault": "waitlist-order-wrong",
+      "exitCode": 1,
+      "violatedRules": ["waitlist-declared-order"],
+      "cleanRules": ["cancel-releases-slot"]
+    },
+    {
+      "id": "exam-normal-correct",
+      "app": "exam-seat-app",
+      "scenario": "scenarios/exam-normal.json",
+      "fault": null,
+      "exitCode": 0,
+      "violatedRules": [],
+      "cleanRules": ["reservation-recorded", "capacity-not-exceeded"]
+    },
+    {
+      "id": "exam-contend-correct",
+      "app": "exam-seat-app",
+      "scenario": "scenarios/exam-contend.json",
+      "fault": null,
+      "exitCode": 0,
+      "violatedRules": [],
+      "cleanRules": ["reservation-recorded", "capacity-not-exceeded"]
+    },
+    {
+      "id": "exam-contend-overbooking",
+      "app": "exam-seat-app",
+      "scenario": "scenarios/exam-contend.json",
+      "fault": "overbooking",
+      "exitCode": 1,
+      "violatedRules": ["capacity-not-exceeded"],
+      "cleanRules": ["reservation-recorded"]
+    },
+    {
+      "id": "exam-cancel-waitlist-correct",
+      "app": "exam-seat-app",
+      "scenario": "scenarios/exam-cancel-waitlist.json",
+      "fault": null,
+      "exitCode": 0,
+      "violatedRules": [],
+      "cleanRules": ["cancel-releases-seat", "waitlist-declared-order"]
+    },
+    {
+      "id": "exam-cancel-waitlist-cancel-keeps-seat",
+      "app": "exam-seat-app",
+      "scenario": "scenarios/exam-cancel-waitlist.json",
+      "fault": "cancel-keeps-seat",
+      "exitCode": 2,
+      "violatedRules": ["cancel-releases-seat", "waitlist-declared-order"],
+      "cleanRules": []
+    },
+    {
+      "id": "exam-cancel-waitlist-waitlist-order-wrong",
+      "app": "exam-seat-app",
+      "scenario": "scenarios/exam-cancel-waitlist.json",
+      "fault": "waitlist-order-wrong",
+      "exitCode": 1,
+      "violatedRules": ["waitlist-declared-order"],
+      "cleanRules": ["cancel-releases-seat"]
+    }
+  ]
+}
