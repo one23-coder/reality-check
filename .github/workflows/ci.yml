@@ -8,6 +8,9 @@
 #   installed explicitly with `npx playwright@1.56.0 install chromium` — pinned
 #   to the playwright-core version in packages/adapter-local-web — BEFORE npm
 #   test. Ubuntu additionally needs --with-deps for the system libraries.
+# - Steps mirror `npm run accept` on the runner: build+test (verify), 三入口,
+#   正反例矩阵, 标注案例集基准, 外部助手闭环, blocked, 串行稳定性 —— CI 绿才算
+#   绿，本机绿不算。
 # - clean-env-twice: 方案 §7 审查项「连续两轮 CI，第二轮不受第一轮影响」——
 #   the same runner runs npm test twice in a row; run 2 must pass identically,
 #   proving run-to-run data isolation (no leftover accounts/data, §10).
@@ -16,6 +19,8 @@ name: CI
 on:
   push:
   pull_request:
+  # 手动触发：外部验证（CI 运行号）需要能按需重跑，而不必再造一次提交。
+  workflow_dispatch:
 
 jobs:
   test:
@@ -63,6 +68,14 @@ jobs:
 
       - name: External agent loop (方案 §7, public interfaces only)
         run: node scripts/external-agent-loop.mjs
+
+      # 以下两项补齐 `npm run accept` 的剩余门禁（此前 CI 少了它们，本机 7/7
+      # 不等于 CI 7/7）。
+      - name: Blocked path (环境缺失 ⇒ exit 3, 方案 §10)
+        run: node scripts/blocked-case.mjs
+
+      - name: Serial stability (同一场景连跑 10 次结论一致)
+        run: node scripts/serial-stability.mjs
 
   clean-env-twice:
     name: clean-env-twice (two consecutive test rounds, one runner)

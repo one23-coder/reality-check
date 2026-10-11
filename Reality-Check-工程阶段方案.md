@@ -287,7 +287,7 @@ CLI（已有）／工作台／MCP／CI
 
 **P1 — 剩余取证项（在此完成前不开新功能）**
 
-1. **CI 托管 Runner 实跑绿的记录**：把 `npm test` / 三入口 / 矩阵 / 基准的运行号写进附录 A（工作流步骤已就位，缺 GitHub Runner 执行）。
+1. **CI 托管 Runner 实跑绿的记录**：工作流已覆盖全部门禁且可手动触发（`workflow_dispatch`），差的是**跑一次并把运行号写进附录 A**（本机 7/7 ≠ CI 7/7）。
 2. **≥3 个真实外部项目试用**（当前只有两个自带 fixture）：记录接入耗时、有效发现、误报率、再次使用情况；需要外部输入，无法自证。
 3. ~~场景条件分支（`when`）~~ —— **已完成（五轮）**：场景/结果升版 1.1，语义与边界见规则 22、`docs/scenario-guide.md` §4.4、`docs/protocol-reference.md` §6；示例场景 + 矩阵 + 标注案例集同步（A.10）。
 3. ~~预先标注的正常/故障案例集评估~~ —— **已完成**：`fixtures/diagnostic-cases.json` + `scripts/diagnostic-benchmark.mjs`，12/12、漏报 0、误报 0（A.8，含一处标签修正的公开）。
@@ -320,7 +320,7 @@ CLI（已有）／工作台／MCP／CI
 | 9 | 证据链闭环：采集即落盘 → 内核逐条核对 → 报告可回溯 | ✅ | 观察器证据与步骤证据同闸门；`result.json.evidence` 与 `evidence/` 一一对应（A.7） |
 | 10 | 数据隔离：只清理台账内资源；无标记数据根拒绝运行 | ✅ | 内核启动前 `claimDataRoot` + 台账兜底清理（A.7）；适配器拒绝非本次运行的 db |
 | 11 | Linux 行为与 Windows 一致 | ◐ | WSL2 记录在 A.2；本轮新增的步骤证据/台账未在 Linux 复跑 |
-| 12 | CI 在托管 Runner 上真正跑绿（含三入口与矩阵） | ◐ | 工作流已加入步骤，缺 GitHub Runner 的运行号 |
+| 12 | CI 在托管 Runner 上真正跑绿（含三入口与矩阵） | ◐ | 工作流已覆盖 `npm run accept` 的全部门禁（build+test、三入口、矩阵、基准、闭环、blocked、串行）并支持 `workflow_dispatch` 手动触发；**仍缺 GitHub Runner 的运行号**（本机 7/7 不能代替 CI 7/7） |
 | 13 | ≥3 个**真实外部项目**试用，记录耗时/发现/误报/复用 | ⬜ | 仓库内只有 2 个自带 fixture；需要外部输入，无法自证 |
 | 14 | macOS 支持经实际验证后入矩阵 | ⬜ | 需要 macOS 机器 |
 | 15 | 受控事件注入（邮件/回调）、虚拟时间、安装/升级/迁移/排障文档 | ⬜ | 阶段 4 未开工的明确范围 |
@@ -342,10 +342,10 @@ CLI（已有）／工作台／MCP／CI
 | --- | --- | --- | --- | --- |
 | booking-normal | 退出码 0，通过 | — | — | — |
 | booking-contend | 退出码 0，通过 | 退出码 1，✗ capacity-not-exceeded；✓ booking-recorded 不受牵连 | — | — |
-| booking-cancel-waitlist | 退出码 0，3 断言全过 | — | 退出码 2，✗cancel-releases-slot、✗waitlist-declared-order（证据缺失项列出） | 退出码 1，✗waitlist-declared-order ×2；✓cancel-releases-slot 不受牵连 |
+| booking-cancel-waitlist | 退出码 0，3 断言全过 | — | 退出码 1，✗cancel-releases-slot、✗waitlist-declared-order（另有一条 inconclusive 具名 `rows`，按规则 24 不再压低结论；2026-10-11 前记为 2） | 退出码 1，✗waitlist-declared-order ×2；✓cancel-releases-slot 不受牵连 |
 | exam-normal | 退出码 0，通过 | — | — | — |
 | exam-contend | 退出码 0，通过 | 退出码 1，✗capacity-not-exceeded | — | — |
-| exam-cancel-waitlist | 退出码 0，3 断言全过 | — | 退出码 2，✗ 两规则 | 退出码 1，✗waitlist-declared-order |
+| exam-cancel-waitlist | 退出码 0，3 断言全过 | — | 退出码 1，✗ 两规则（2026-10-11 前记为 2，同规则 24） | 退出码 1，✗waitlist-declared-order |
 
 要点：候补顺序故障的检出依赖 `eqStr` 断言（协议 1.0 扩展，op+expected 交叉校验）与**两个候补者**（bob 队首、carol 队尾）——单候补队列下首位/末位递补状态同构，无法区分。booking 侧曾因场景步骤排序错误（carol 报名排在取消之后）导致故障无法区分，经时间线证据定位后修正。
 
