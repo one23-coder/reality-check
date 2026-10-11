@@ -3,9 +3,10 @@
  * Line-delimited JSON-RPC 2.0 over stdin/stdout (StdioServerTransport
  * framing). HARD RULE: stdout carries protocol messages and NOTHING else;
  * every diagnostic goes to stderr. Process-level guards keep the loop alive
- * even when the adapter's app spawn surfaces errors as uncaughtException
- * (adapter-local-web throws inside its child 'error' handler), so a blocked
- * environment degrades to a verdict, never a dead server.
+ * when something throws outside any await chain — but they must also **unblock
+ * the in-flight request**: an error that never settles its promise would leave
+ * the serialized queue wedged forever, and a server that stops answering is
+ * worse than one that reports a failed request.
  */
 import readline from "node:readline";
 import { loadMcpConfig } from "./config.js";
@@ -17,9 +18,11 @@ function diag(message: string): void {
 
 process.on("uncaughtException", (err) => {
   diag(`uncaughtException (server stays up): ${err?.stack ?? String(err)}`);
+  server.failInFlight(`uncaughtException: ${err instanceof Error ? err.message : String(err)}`);
 });
 process.on("unhandledRejection", (reason) => {
   diag(`unhandledRejection (server stays up): ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+  server.failInFlight(`unhandledRejection: ${reason instanceof Error ? reason.message : String(reason)}`);
 });
 
 const server = new RealityCheckMcpServer(loadMcpConfig(), (line) => {

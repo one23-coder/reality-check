@@ -40,6 +40,9 @@ export interface RunOutcome {
   result: RunResult;
   scenario: Scenario;
   runDir: string;
+  /** Non-fatal problems from sidecar/report post-processing. Printed on stderr;
+   * they must never replace the verdict's exit code (see `runOnce`). */
+  warnings: string[];
 }
 
 export interface RunOnceOptions {
@@ -92,14 +95,32 @@ export async function readVerdictFromResult(config: RcConfig, runId: string): Pr
   return "unknown";
 }
 
-export async function readEvents(runDir: string): Promise<TimelineEvent[]> {
-  const text = await fsp.readFile(path.join(runDir, "events.jsonl"), "utf8");
+export async function readEvents(
+  runDir: string,
+): Promise<{ events: TimelineEvent[]; warnings: string[] }> {
+  let text: string;
+  try {
+    text = await fsp.readFile(path.join(runDir, "events.jsonl"), "utf8");
+  } catch (e) {
+    throw new Error(
+      `events.jsonl unreadable under ${runDir}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
   const events: TimelineEvent[] = [];
+  let skipped = 0;
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
-    events.push(JSON.parse(line) as TimelineEvent);
+    try {
+      events.push(JSON.parse(line) as TimelineEvent);
+    } catch {
+      // 单行损坏不足以否掉整次运行的结论，但必须在 stderr 上说出来。
+      skipped++;
+    }
   }
-  return events;
+  const warnings: string[] = [];
+  if (skipped > 0)
+    warnings.push(`events.jsonl 有 ${skipped} 行无法解析，已跳过（报告里会少这 ${skipped} 个事件）`);
+  return { events, warnings };
 }
 
 /** One full execution: scenario load -> adapter -> kernel -> cli.json sidecar
@@ -136,19 +157,63 @@ export async function runOnce(opts: RunOnceOptions): Promise<RunOutcome> {
   }
 
   const runDir = path.join(config.runsDir, result.runId);
-  const meta: CliRunMeta = { scenarioPath: path.resolve(opts.scenarioPath), seed: result.seed };
-  if (opts.previousRunId !== undefined) meta.previousRunId = opts.previousRunId;
-  await fsp.writeFile(cliMetaPath(config, result.runId), JSON.stringify(meta, null, 2), "utf8");
+  const warnings = await writeRunArtifacts({
+    config,
+    runId: result.runId,
+    result,
+    scenarioPath: opts.scenarioPath,
+    ...(opts.previousRunId !== undefined ? { previousRunId: opts.previousRunId } : {}),
+  });
 
-  const events = await readEvents(runDir);
-  const reporter = (await import("@rc/reporter")) as {
-    renderJsonReport(result: RunResult, events: TimelineEvent[]): string;
-    renderHtmlReport(result: RunResult, events: TimelineEvent[]): string;
-  };
-  await fsp.writeFile(path.join(runDir, "report.json"), reporter.renderJsonReport(result, events), "utf8");
-  await fsp.writeFile(path.join(runDir, "report.html"), reporter.renderHtmlReport(result, events), "utf8");
+  return { result, scenario, runDir, warnings };
+}
 
-  return { result, scenario, runDir };
+/** 侧车 + 报告：把一次运行的**呈现**写进 run 目录。
+ *
+ * 结论与呈现分离：内核已经把结论写进 result.json 了，所以这里失败**不能**把一次真实
+ * 结论（尤其 failed / exit 1）变成 exit 70 的工具错误——那会让 CI 把真实回归当成环境
+ * 抖动。这类失败以 warning 返回，不抛、不改退出码，但必须在 stderr 上说出来。
+ */
+export async function writeRunArtifacts(opts: {
+  config: RcConfig;
+  runId: string;
+  result: RunResult;
+  scenarioPath: string;
+  previousRunId?: string;
+}): Promise<string[]> {
+  const runDir = path.join(opts.config.runsDir, opts.runId);
+  const warnings: string[] = [];
+  try {
+    const meta: CliRunMeta = { scenarioPath: path.resolve(opts.scenarioPath), seed: opts.result.seed };
+    if (opts.previousRunId !== undefined) meta.previousRunId = opts.previousRunId;
+    await fsp.writeFile(
+      cliMetaPath(opts.config, opts.runId),
+      JSON.stringify(meta, null, 2),
+      "utf8",
+    );
+
+    const { events, warnings: eventWarnings } = await readEvents(runDir);
+    warnings.push(...eventWarnings);
+    const reporter = (await import("@rc/reporter")) as {
+      renderJsonReport(result: RunResult, events: TimelineEvent[]): string;
+      renderHtmlReport(result: RunResult, events: TimelineEvent[]): string;
+    };
+    await fsp.writeFile(
+      path.join(runDir, "report.json"),
+      reporter.renderJsonReport(opts.result, events),
+      "utf8",
+    );
+    await fsp.writeFile(
+      path.join(runDir, "report.html"),
+      reporter.renderHtmlReport(opts.result, events),
+      "utf8",
+    );
+  } catch (e) {
+    warnings.push(
+      `结论已落盘（${path.join(runDir, "result.json")}），但侧车/报告写入失败：${e instanceof Error ? e.message : String(e)}；该运行的 rerun 与 export --pack 可能不可用`,
+    );
+  }
+  return warnings;
 }
 
 export { VERDICT_EXIT };

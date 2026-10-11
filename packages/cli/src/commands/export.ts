@@ -6,6 +6,7 @@
  */
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { runIdProblem } from "@rc/protocol";
 import {
   configError,
   flagString,
@@ -78,6 +79,9 @@ async function exportCommandImpl(args: string[]): Promise<CommandResult> {
   if (packOut !== undefined) {
     const runId = flagString(parsed, "run-id");
     if (runId === undefined) throw configError("export --pack requires --run-id <id>");
+    // runId 会拼进 runsDir 与 pack 输出目录（后者会被递归删除），必须是单段文件名。
+    const badRunId = runIdProblem(runId);
+    if (badRunId !== null) throw configError(badRunId);
     const includeImages =
       parsed.flags.get("include-images") === true || parsed.flags.get("include-images") === "true";
     // 场景里的角色账号是"已知敏感值"的最可靠来源；侧车缺失时退回模式规则。

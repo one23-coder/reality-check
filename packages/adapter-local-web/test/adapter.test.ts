@@ -3,12 +3,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { createLocalWebAdapter } from "../src/index.js";
+import {
+  BOOKING_OBSERVERS,
+  EXAM_OBSERVERS,
+  OBSERVERS_FILENAME,
+  createLocalWebAdapter,
+  type LocalWebAdapter,
+} from "../src/index.js";
 import type { Role, Step } from "../src/types.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -69,10 +75,14 @@ test("manifest declares the adapter contract", () => {
     "capacity-left",
     "waitlist-head",
     "waitlist-order",
-    "seat-count",
-    "seats-left",
+    "booking-holder",
   ]) {
     assert.ok(m.observers[id], `observer ${id} missing`);
+  }
+  // 口径属于**应用**：booking 应用的清单里不该出现 exam 的观察器，否则一份 booking
+  // 场景可能悄悄用上另一张表的语义。
+  for (const id of ["seat-count", "seats-left", "reservation-holder"]) {
+    assert.equal(m.observers[id], undefined, `${id} must not be declared by the booking app`);
   }
 });
 
@@ -366,5 +376,90 @@ test("a failed evidence capture is surfaced on the attempt, never silently dropp
   } finally {
     await adapter.teardown();
     await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("observer sql must be a single read-only statement (规则 1 covers the statement, not just table names)", async () => {
+  const tmp = await makeTmp();
+  const file = path.join(tmp, "obs.json");
+  const build = async (sql: string): Promise<LocalWebAdapter> => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        observedTables: ["bookings"],
+        observers: { o: { sql, tables: ["bookings"], columns: ["n"] } },
+      }),
+      "utf8",
+    );
+    return createLocalWebAdapter({ appPath: BOOKING_APP, observersFile: file });
+  };
+  // 实测（node:sqlite）：prepare("INSERT INTO t VALUES(1)").all() 返回 []，
+  // 但行真的写进了库。一条写语句会静默改写被测应用的状态 = 伪造结论。
+  await assert.rejects(() => build("INSERT INTO bookings (course_id) VALUES ('course-1')"), /must start with SELECT or WITH/);
+  await assert.rejects(() => build("UPDATE bookings SET account = 'x'"), /must start with SELECT or WITH/);
+  await assert.rejects(() => build("DELETE FROM bookings"), /must start with SELECT or WITH/);
+  await assert.rejects(() => build("PRAGMA journal_mode = WAL"), /must start with SELECT or WITH/);
+  await assert.rejects(() => build("-- a comment\n/* b */ DELETE FROM bookings"), /must start with SELECT or WITH/);
+  await assert.rejects(() => build("SELECT 1 AS n FROM bookings; DELETE FROM bookings"), /single statement/);
+  const ok = await build("SELECT COUNT(*) AS n FROM bookings");
+  assert.deepEqual(Object.keys(ok.manifest().observers), ["o"]);
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("declared tables must be plain identifiers (they are interpolated into dump SQL)", async () => {
+  const tmp = await makeTmp();
+  const file = path.join(tmp, "obs.json");
+  await writeFile(
+    file,
+    JSON.stringify({
+      observedTables: ["bookings; DROP TABLE bookings"],
+      observers: { o: { sql: "SELECT 1 AS n FROM bookings", tables: ["bookings"], columns: ["n"] } },
+    }),
+    "utf8",
+  );
+  assert.throws(
+    () => createLocalWebAdapter({ appPath: BOOKING_APP, observersFile: file }),
+    /not a plain SQL identifier/,
+  );
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("an app that declares no observers is a named config error, never a silent preset fallback", async () => {
+  const tmp = await makeTmp();
+  const appDir = path.join(tmp, "app-with-no-observers");
+  mkdirSync(appDir, { recursive: true });
+  const entry = path.join(appDir, "server.js");
+  await writeFile(entry, "// an app that never declared its 口径\n", "utf8");
+  // 第三方应用只要有一张同名表（含义不同），静默回退就会用 fixture 的口径
+  // （course-1 / holder_rc）给出一个看起来完全正常的错误结论。
+  assert.throws(() => createLocalWebAdapter({ appPath: entry }), /no observers declared for app/);
+  // 显式 opt-in 仍可用：只读静态元数据的场合（MCP 能力门禁）不发生任何观察。
+  assert.ok(
+    Object.keys(createLocalWebAdapter({ appPath: entry, allowBundledPreset: true }).manifest().observers)
+      .length > 0,
+  );
+  // 入口**不存在**是另一类缺失：运行会以 blocked 结束（setupEnv 起不来），
+  // 观察器根本用不上，不能提前把它变成 exit 64 配置错误。
+  const missing = path.join(appDir, "not-written-yet.js");
+  assert.ok(Object.keys(createLocalWebAdapter({ appPath: missing }).manifest().observers).length > 0);
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("the bundled fixture apps ship their own observer declarations, matching the presets", async () => {
+  const cases = [
+    { app: "booking-app", preset: BOOKING_OBSERVERS },
+    { app: "exam-seat-app", preset: EXAM_OBSERVERS },
+  ] as const;
+  for (const c of cases) {
+    const dir = path.join(REPO_ROOT, "fixtures", c.app);
+    const doc = JSON.parse(
+      await readFile(path.join(dir, OBSERVERS_FILENAME), "utf8"),
+    ) as { observedTables: string[]; observers: Record<string, { tables: string[] }> };
+    // 预设常量与随应用分发的配置文件必须一致，否则测试与真实运行会走不同口径。
+    assert.deepEqual(doc.observers, c.preset, `${c.app}/${OBSERVERS_FILENAME} drifted from its preset`);
+    for (const o of Object.values(doc.observers))
+      for (const t of o.tables) assert.ok(doc.observedTables.includes(t));
+    const m = createLocalWebAdapter({ appPath: path.join(dir, "server.js") }).manifest();
+    assert.deepEqual(Object.keys(m.observers).sort(), Object.keys(c.preset).sort());
   }
 });

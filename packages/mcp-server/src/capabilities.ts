@@ -105,8 +105,16 @@ export function checkScenario(scenarioPath: string, appEntry: string | undefined
 } {
   const scenario = loadScenarioFile(scenarioPath);
   // appPath is a placeholder until setupEnv; manifest() is static metadata.
-  const adapter = createLocalWebAdapter({ appPath: appEntry ?? "unknown" });
-  const manifest = adapter.manifest();
+  // 观察器口径必须能被读到：能力门禁要核对场景的观察器/表白名单，用 fixture 预设
+  // 去替第三方应用"过门"比过不了门更糟——它会放行一份永远跑不起来的场景。
+  let manifest: ReturnType<ReturnType<typeof createLocalWebAdapter>["manifest"]>;
+  try {
+    manifest = createLocalWebAdapter({ appPath: appEntry ?? "unknown" }).manifest();
+  } catch (e) {
+    throw new ToolError(
+      `cannot gate this scenario against the app's observer declarations: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
   checkCapabilities(scenario, manifest);
   return {
     valid: true,

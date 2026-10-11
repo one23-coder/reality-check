@@ -1,0 +1,30 @@
+{
+  "observedTables": ["courses", "bookings", "waitlist", "accounts"],
+  "observers": {
+    "booking-count": {
+      "sql": "SELECT COUNT(*) AS n FROM bookings",
+      "tables": ["bookings"],
+      "columns": ["n"]
+    },
+    "capacity-left": {
+      "sql": "SELECT capacity - (SELECT COUNT(*) FROM bookings WHERE bookings.course_id = courses.id) AS left FROM courses WHERE id = 'course-1'",
+      "tables": ["courses", "bookings"],
+      "columns": ["left"]
+    },
+    "waitlist-head": {
+      "sql": "SELECT account FROM waitlist WHERE course_id = 'course-1' ORDER BY position ASC LIMIT 1",
+      "tables": ["waitlist"],
+      "columns": ["account"]
+    },
+    "waitlist-order": {
+      "sql": "SELECT account FROM waitlist WHERE course_id = 'course-1' ORDER BY position ASC",
+      "tables": ["waitlist"],
+      "columns": ["account"]
+    },
+    "booking-holder": {
+      "sql": "SELECT account FROM bookings WHERE course_id = 'course-1' AND account NOT IN ('holder_rc','holder2_rc') ORDER BY id ASC LIMIT 1",
+      "tables": ["bookings"],
+      "columns": ["account"]
+    }
+  }
+}

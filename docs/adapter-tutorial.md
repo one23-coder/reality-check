@@ -233,8 +233,10 @@ node packages/cli/dist/src/main.js run   scenarios/yours.json --verbose
 规则：
 
 - 每个观察器必须给 `sql` / `tables` / `columns`；`tables` 必须都在 `observedTables` 白名单内（SQL 层只读白名单，规则 1）。
-- 坏 JSON、缺 `columns`、表不在白名单 ⇒ **配置错误（exit 64）并具名原因**，不会静默回退到预设——回退会让同名表查出别的意思。
+- **`sql` 必须是单条 `SELECT` / `WITH`**（去注释后判定；`;` 一律拒绝），表名/列名必须是纯 SQL 标识符。只读是**语句性质**而不只是表名性质：SQLite 的 `prepare("INSERT …").all()` 会返回 `[]` 却真的写入——一条写语句会在运行中改写你的应用状态，那等于伪造结论（规则 28）。
+- 坏 JSON、缺 `columns`、表不在白名单、写语句 ⇒ **配置错误（exit 64）并具名原因**，不会静默回退到预设——回退会让同名表查出别的意思。
 - 场景里 observer 的 `sql` 仍必须与这份清单一致（规则 2「单一口径」）：只是清单现在来自你的应用配置，不再来自适配器源码。
+- **两类「没有」要分清**（规则 29）：应用入口存在却没有这份文件 ⇒ exit 64，并告诉你三种提供方式；应用入口**不存在** ⇒ 环境缺失，运行以 `blocked`（exit 3）结束，观察器根本用不上——这时不会提前变成配置错误。
 
 ## 9. 排查表
 
@@ -244,7 +246,10 @@ node packages/cli/dist/src/main.js run   scenarios/yours.json --verbose
 | exit 64，`SQL differs between scenario and adapter manifest` | 观察器 SQL 与清单不同源（单一口径） |
 | exit 64，`observer "x" is not declared by adapter` | 场景观察器 id 不在清单里（清单 = 你的 `reality-check.observers.json`，见 §8.1） |
 | exit 64，`observers file not found` / `invalid JSON` / `needs "columns"` / `not in observedTables` | 观察器配置路径不对、JSON 坏、缺字段或表不在白名单（§8.1） |
-| exit 3（blocked），`setupEnv failed` | 应用没起来：入口/依赖/端口/`/healthz` 不健康（`--verbose` 会直接给原因） |
+| exit 64，`no observers declared for app` | 应用入口存在，但旁边没有 `reality-check.observers.json`，也没在配置里指定（§8.1） |
+| exit 64，`must start with SELECT or WITH` / `single statement` | 观察器 SQL 是写语句或多语句；只读是语句性质（§8.1、规则 28） |
+| exit 64，`not a plain SQL identifier` | `tables`/`columns` 声明了非标识符字符串（它们会被拼进 dump SQL） |
+| 退出码是结论值，但 stderr 有 `warning: 结论已落盘…` | 侧车/报告写失败：结论有效（`result.json` 在），但该运行不能 `rerun` / `export --pack`（规则 30） |
 | exit 3，`步骤无法执行` | 选择器找不到、导航超时、浏览器断开——不是业务结论 |
 | exit 3，`claimDataRoot` | 数据根已有内容且无 `ownership.json` 标记（§10 拒绝在别人数据上跑） |
 | exit 2（inconclusive） | 证据不足：观察器 0 行/列缺失/非数值/证据引用核对失败（会列出缺哪类） |

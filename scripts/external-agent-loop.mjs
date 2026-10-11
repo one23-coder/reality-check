@@ -32,6 +32,12 @@ await fsp.mkdir(scenariosDir, { recursive: true });
 await fsp.mkdir(appDir, { recursive: true });
 const appCopy = path.join(appDir, "server.js");
 await fsp.copyFile(path.join(root, "fixtures/booking-app/server.js"), appCopy);
+// 观察器口径随应用走（规则 25/29）：复制应用时必须连同声明一起复制，否则这个
+// "外部项目"会被具名配置错误挡在门外 —— 那正好说明新规则在真实工具链里生效。
+await fsp.copyFile(
+  path.join(root, "fixtures/booking-app/reality-check.observers.json"),
+  path.join(appDir, "reality-check.observers.json"),
+);
 await fsp.copyFile(
   path.join(root, "scenarios/booking-contend.json"),
   path.join(scenariosDir, "booking-contend.json"),

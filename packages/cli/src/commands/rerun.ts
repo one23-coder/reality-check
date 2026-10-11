@@ -6,7 +6,7 @@
  * change. Exit code = the NEW verdict's code.
  */
 import path from "node:path";
-import { VERDICT_EXIT, type TimelineEvent } from "@rc/protocol";
+import { VERDICT_EXIT, runIdProblem, type TimelineEvent } from "@rc/protocol";
 import { streamEventLine, verdictLines } from "../format.js";
 import {
   configError,
@@ -34,13 +34,15 @@ async function rerunCommandImpl(args: string[]): Promise<CommandResult> {
   if (runId === undefined) {
     throw configError("usage: reality-check rerun --run-id <id>");
   }
+  const badRunId = runIdProblem(runId);
+  if (badRunId !== null) throw configError(badRunId);
   const config = loadConfig(flagString(parsed, "config"));
 
   const meta = await readCliMeta(config, runId);
   const previousVerdict = await readVerdictFromResult(config, runId);
   const verbose = parsed.flags.get("verbose") === true || parsed.flags.get("verbose") === "true";
 
-  const { result } = await runOnce({
+  const { result, warnings } = await runOnce({
     config,
     scenarioPath: meta.scenarioPath,
     seed: meta.seed,
@@ -61,6 +63,6 @@ async function rerunCommandImpl(args: string[]): Promise<CommandResult> {
       `rerun ${result.runId} (prev ${runId}): previous=${previousVerdict} now=${result.verdict}`,
       ...verdictLines(result, { verbose, runDir: path.join(config.runsDir, result.runId) }).slice(1),
     ].join("\n"),
-    stderr: "",
+    stderr: warnings.map((w) => `warning: ${w}`).join("\n"),
   };
 }

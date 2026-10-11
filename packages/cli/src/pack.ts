@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { runIdProblem } from "@rc/protocol";
 import {
   findLeaks,
   findRuleResidues,
@@ -66,7 +67,10 @@ function isTextEvidence(name: string): boolean {
 
 /** 收集"原始敏感值"：场景角色账号、数据库绝对路径、运行目录、调用方补充的值。
  * 场景可用时直接用它的角色账号——这是最可靠的来源，不靠模式猜。 */
-async function collectSecrets(opts: PackOptions, result: unknown): Promise<string[]> {
+async function collectSecrets(
+  opts: PackOptions,
+  result: unknown,
+): Promise<{ secrets: string[]; skippedShort: number }> {
   const secrets = new Set<string>([opts.runDir, path.dirname(opts.runDir)]);
   for (const extra of opts.extraSecrets ?? []) secrets.add(extra);
 
@@ -89,10 +93,19 @@ async function collectSecrets(opts: PackOptions, result: unknown): Promise<strin
       // scenario 不可读时退回模式规则；pack.json 的 notes 会说明
     }
   }
-  return [...secrets].filter((s) => s.length >= 3);
+  // <3 字符的字面值逐字替换会毁掉正常内容（例如把 "a" 换成占位符），所以不替换。
+  // 但**不能静默丢弃**：它们既不参与替换也不参与反扫，必须记进 pack.json，
+  // 让读包的人知道这次反扫的边界在哪。
+  const all = [...secrets].filter((s) => s.length > 0);
+  const kept = all.filter((s) => s.length >= 3);
+  return { secrets: kept, skippedShort: all.length - kept.length };
 }
 
 export async function buildEvidencePack(opts: PackOptions): Promise<PackResult> {
+  // runId 直接决定两个路径：读哪次运行、以及哪个目录会被**递归删除**后重写。
+  // 任何入口漏校验都会变成破坏性的路径穿越，所以在动手前再验一次。
+  const badRunId = runIdProblem(opts.runId);
+  if (badRunId !== null) throw configError(badRunId);
   const rawResult = await fsp
     .readFile(path.join(opts.runDir, "result.json"), "utf8")
     .catch((e: unknown) => {
@@ -103,7 +116,8 @@ export async function buildEvidencePack(opts: PackOptions): Promise<PackResult> 
       );
     });
   const resultValue = JSON.parse(rawResult) as unknown;
-  const secrets = await collectSecrets(opts, resultValue);
+  const collected = await collectSecrets(opts, resultValue);
+  const secrets = collected.secrets;
 
   const packDir = path.join(opts.outDir, `${opts.runId}-pack`);
   await fsp.rm(packDir, { recursive: true, force: true });
@@ -251,6 +265,11 @@ export async function buildEvidencePack(opts: PackOptions): Promise<PackResult> 
       "所有文本文件已按 packages/reporter/src/sanitize.ts 的显式规则脱敏；已知敏感值（场景角色账号/密码、数据库绝对路径、运行目录）逐字替换。",
       "脱敏后已独立反扫：任何原始敏感值残留都会删除整包并报错（exit 70）。",
       "runId、时间戳、退出码、规则判定与证据哈希保留：分享的是结论与取证链，不是环境。",
+      ...(collected.skippedShort > 0
+        ? [
+            `反扫边界：${collected.skippedShort} 个长度 < 3 的敏感值未做逐字替换（逐字替换会毁掉正常内容），它们也未参与反扫——短账号/短密码需靠模式规则兜底。`,
+          ]
+        : []),
     ],
   };
   await fsp.writeFile(path.join(packDir, "pack.json"), JSON.stringify(manifest, null, 2), "utf8");

@@ -153,12 +153,21 @@ async function handleRun(
     }
   }
 
+  // 非法 seed/fault 必须报错，不能悄悄按默认值跑：用户看到 200 + verdict 会以为
+//  这是"指定种子下的结论"，随后复跑对不上，结论就失去了可归因性。
+  if (req.fault !== undefined && typeof req.fault !== "string")
+    return { status: 400, payload: { error: `invalid fault: expected a string, got ${typeof req.fault}` } };
+  if (req.seed !== undefined && !Number.isInteger(req.seed))
+    return {
+      status: 400,
+      payload: { error: `invalid seed: expected an integer, got ${JSON.stringify(req.seed)}` },
+    };
+
   const adapterOpts: LocalWebAdapterOptions = { appPath: opts.appPath };
   if (typeof req.fault === "string" && req.fault !== "") adapterOpts.faultEnv = req.fault;
 
   const execOpts: { runsRoot: string; seed?: number } = { runsRoot: opts.runsDir };
-  if (typeof req.seed === "number" && Number.isInteger(req.seed) && req.seed >= 0)
-    execOpts.seed = req.seed;
+  if (typeof req.seed === "number" && req.seed >= 0) execOpts.seed = req.seed;
 
   let result: RunResult;
   try {
@@ -172,15 +181,38 @@ async function handleRun(
     return { status: 500, payload: { error: `kernel failure: ${msg(e)}` } };
   }
 
-  // Reports from @rc/reporter, written into the same run dir as the CLI does.
+  // 运行产物布局必须与 CLI 一致（docs/protocol-reference.md §产物）：侧车 + 报告。
+  // 少了 cli.json，工作台跑出来的 run 就 rerun 不掉、export --pack 也退化成模式规则，
+  // "三入口一致"在这里就不成立。写入失败同样不能吞掉结论（与 CLI 同一口径）。
   const runDir = path.join(opts.runsDir, result.runId);
-  const events: TimelineEvent[] = result.timeline;
-  await fsp.writeFile(path.join(runDir, "report.json"), renderJsonReport(result, events), "utf8");
-  await fsp.writeFile(path.join(runDir, "report.html"), renderHtmlReport(result, events), "utf8");
+  const warnings: string[] = [];
+  try {
+    const events: TimelineEvent[] = result.timeline;
+    await fsp.writeFile(
+      path.join(runDir, "cli.json"),
+      JSON.stringify(
+        { scenarioPath: path.resolve(opts.scenariosDir, `${req.scenarioId}.json`), seed: result.seed },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fsp.writeFile(path.join(runDir, "report.json"), renderJsonReport(result, events), "utf8");
+    await fsp.writeFile(path.join(runDir, "report.html"), renderHtmlReport(result, events), "utf8");
+  } catch (e) {
+    warnings.push(
+      `结论已落盘（${path.join(runDir, "result.json")}），但侧车/报告写入失败：${msg(e)}`,
+    );
+  }
 
   return {
     status: 200,
-    payload: { runId: result.runId, verdict: result.verdict, exitCode: VERDICT_EXIT[result.verdict] },
+    payload: {
+      runId: result.runId,
+      verdict: result.verdict,
+      exitCode: VERDICT_EXIT[result.verdict],
+      ...(warnings.length > 0 ? { warnings } : {}),
+    },
   };
 }
 

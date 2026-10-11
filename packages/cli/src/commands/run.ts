@@ -42,7 +42,7 @@ async function runCommandImpl(args: string[]): Promise<CommandResult> {
   // is printed as it happens, so "哪一步卡住" is visible while waiting.
   const verbose = parsed.flags.get("verbose") === true || parsed.flags.get("verbose") === "true";
 
-  const { result } = await runOnce({
+  const { result, warnings } = await runOnce({
     config,
     scenarioPath: path.resolve(scenarioPath),
     ...(seed !== undefined ? { seed } : {}),
@@ -63,6 +63,6 @@ async function runCommandImpl(args: string[]): Promise<CommandResult> {
       verbose,
       runDir: path.join(config.runsDir, result.runId),
     }).join("\n"),
-    stderr: "",
+    stderr: warnings.map((w) => `warning: ${w}`).join("\n"),
   };
 }

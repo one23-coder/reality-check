@@ -103,6 +103,11 @@ export class RealityCheckMcpServer {
   /** Responses are serialized through this chain so concurrent requests keep
    * their stdout order stable. */
   private queue: Promise<void> = Promise.resolve();
+  /** The request currently being dispatched, if any. Requests are serialized
+   * through `queue`, so a promise that never settles blocks every later request
+   * (including `ping`). Tracking the in-flight id lets a process-level error
+   * fail exactly that request instead of wedging the server. */
+  private inFlight: { id: string | number } | null = null;
 
   constructor(
     private readonly config: McpConfig,
@@ -139,7 +144,24 @@ export class RealityCheckMcpServer {
     const id: string | number = msg.id;
     const method: string = msg.method;
     // Serialize async handling to preserve response order on stdout.
-    this.queue = this.queue.then(() => this.dispatch(id, method, msg.params)).catch(() => {});
+    this.inFlight = { id };
+    this.queue = this.queue
+      .then(() => this.dispatch(id, method, msg.params))
+      .catch(() => {})
+      .then(() => {
+        if (this.inFlight?.id === id) this.inFlight = null;
+      });
+  }
+
+  /** Fail the in-flight request (called by the process-level error handlers).
+   * A wedged promise cannot be recovered from — the only honest move is to tell
+   * the caller its request failed instead of leaving it hanging forever. */
+  failInFlight(reason: string): void {
+    const pending = this.inFlight;
+    this.inFlight = null;
+    if (pending === null) return;
+    this.log(`failing in-flight request ${String(pending.id)}: ${reason}`);
+    this.respondError(pending.id, JSONRPC_ERROR.INTERNAL, reason);
   }
 
   private onNotification(method: string): void {

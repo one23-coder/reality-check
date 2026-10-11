@@ -108,6 +108,10 @@
 25. **观察器属于应用，不属于适配器源码**（2026-10-11 七轮）：适配器里不再硬编码任何业务主键/账号（曾经的 `course-1`/`exam-1`/`holder_rc` 现在只是**两个自带参考应用的预设**）。接入新应用只写配置：应用目录旁的 `reality-check.observers.json`、配置里的 `adapter.observers`，或直接传 `observers`。`observedTables` 随之声明；声明的表不在白名单内、缺少 sql/columns、JSON 坏掉都按**配置错误**具名拒绝（exit 64），绝不静默回退到预设（回退会让同名表查出别的意思）。「单一口径」不变：场景 observer 的 SQL 仍必须与适配器清单一致，只是清单现在来自应用配置。
 26. **报告里的 `expected` 必须按 op 的词汇渲染**（2026-10-11 七轮）：`eqStr` 带 `expected`、数值 op 带 `value`，曾共用 `${op} ${value}` 模板，导致 eqStr 一旦 inconclusive 就渲染成 `eqStr undefined`——最关键的一句恰好在最需要它时消失。现在 held/violated/inconclusive/not-evaluated 四种判定共用同一个 `expectedText()`。顺带放开断言与条件的**负值**（`value` 不再 `min: 0`）：余额透支、库存缺口、超订后 `capacity-left = -1` 正是断言存在的理由。
 27. **基础设施失败必须落到数据里，不能抛出调用栈**（2026-10-11 七轮）：fixture 子进程的 `spawn` 失败曾写成 `child.on("error", () => { throw err })`——该回调不在任何调用栈内，throw 会变成未捕获异常：进程直接死，没有 `blocked` 事件、没有 `result.json`，与「可归因的基础设施失败」的承诺正好相反（浏览器断开这条处理得很好，唯独子进程漏了）。现在错误被记录，健康检查循环把它转成 `setupEnv` 的正常拒绝（内核 ⇒ blocked / exit 3），运行期再出现则写进 `attempt.detail.error`。
+28. **只读是语句性质，不是表名性质**（2026-10-11 八轮）：规则 1 的白名单只校验「SQL 里出现了哪些表」，不校验「这条 SQL 干什么」。而观察器口径自规则 25 起已从适配器源码变成**应用配置**——信任边界变宽了。实测 `node:sqlite` 的 `prepare("INSERT INTO t VALUES(1)").all()` 返回 `[]` 却**真的写入**（多语句 `;` 同样被接受），也就是说一条写语句会在运行中静默改写被测应用的状态，等于伪造结论。现在观察器 SQL 必须是**单条** `SELECT`/`WITH`（去掉注释后判定，`;` 一律拒绝），运行前再验一次；`tables`/`columns`/`observedTables` 必须是纯 SQL 标识符（它们被拼进 dump 语句，不是参数绑定）。违规是**具名配置错误**（exit 64）。
+29. **缺声明与缺应用是两类缺失**（2026-10-11 八轮）：应用入口存在却没有任何观察器声明 ⇒ 配置错误（exit 64，附上该怎么做的具体提示），因为静默回退到 fixture 预设会让第三方应用的**同名表**用别人的口径（`course-1`、`holder_rc`）得出一个看起来完全正常的错误结论；应用入口**不存在** ⇒ 环境缺失，运行本会以 `blocked` 结束，观察器根本用不上，此时提前判配置错误会把 `blocked` 变成 exit 64、掩盖「应用没搭起来」这个真正原因。两个自带参考应用各自随目录提供 `reality-check.observers.json`，测试钉住它们与预设常量一致（防漂移）。
+30. **结论与呈现分离：呈现失败不得顶掉结论**（2026-10-11 八轮）：内核已经把结论写进 `result.json`，所以 CLI/工作台写侧车与报告失败时**不抛异常、不改退出码**，而是把原因写进 `warning` 并打到 stderr。此前 `readEvents`/报告写入的任何异常都会变成 exit 70：一次真实的 `failed`（exit 1）在 CI 上被报成工具错误，真实回归会被当成环境抖动。`events.jsonl` 单行损坏也只降级为一条 warning。
+31. **用户给的标识符先验形状，再拼路径**（2026-10-11 八轮）：`runId` 来自命令行参数或 MCP 工具调用，随后被 `path.join` 到 `runsDir`；在 `export --pack` 里那个路径还会被**递归删除**后重写——`..` 在那里不是笔误，是破坏性路径穿越。MCP 侧早有守卫，CLI 侧没有。现在 `runIdProblem()`/`isSafeRunId()` 落在 `@rc/protocol` 单一来源，CLI `export`/`rerun`/`pack` 与 MCP 共用；工作台对非法 `seed`/`fault` 返回 400 而不是静默按默认值跑（用户拿到 200 + verdict 会以为那是「指定种子下的结论」）。MCP 的进程级异常处理还会**终结在途请求**（`failInFlight`）：请求是串行队列，一个永不 settle 的 promise 会让包括 `ping` 在内的后续请求全部挂死，服务器活着但不回答比报错更难排查。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -309,7 +313,7 @@ CLI（已有）／工作台／MCP／CI
 
 | # | 判据（可检验） | 现状 | 证据 / 缺口 |
 | --- | --- | --- | --- |
-| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = 162/162；**`npm run accept` 一键 7/7 一次性跑通**（2026-10-10 六轮，见 A.12） |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = **187/187**；**`npm run accept` 一键 7/7 一次性跑通**（2026-10-11 八轮，见 A.12/A.14） |
 | 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
 | 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
 | 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
@@ -325,6 +329,7 @@ CLI（已有）／工作台／MCP／CI
 | 14 | macOS 支持经实际验证后入矩阵 | ⬜ | 需要 macOS 机器 |
 | 15 | 受控事件注入（邮件/回调）、虚拟时间、安装/升级/迁移/排障文档 | ⬜ | 阶段 4 未开工的明确范围 |
 | 20 | 证据包脱敏导出：账号/密钥/内部路径不得残留，导出后独立反扫 | ✅ | `export --run-id <id> --pack <dir>`（规则 23）；单测 14 项 + 真实运行导出实测：12 文件、74 处替换、4 个二进制排除、leak scan clean，包内反扫零残留（A.11） |
+| 21 | 观察器口径随应用走 + 只读是语句性质 + 入口标识符先验形状 + 呈现失败不顶掉结论 | ✅ | 规则 28–31；`fixtures/<app>/reality-check.observers.json` × 2（测试钉住与预设一致）；`npm run verify` 187/187（A.14） |
 | 16 | 面向使用者的文档：场景编写指南、协议字段速查、适配器开发教程 | ✅ | `docs/scenario-guide.md`、`docs/protocol-reference.md`、`docs/adapter-tutorial.md`（README 有索引） |
 | 17 | 报错具象化：blocked/inconclusive 直接说明原因与建议、给出产物路径 | ✅ | protocol `explainResult()` 单点措辞，CLI 与 MCP 共用；cli 测试断言 blocked 输出含阶段/原因/建议/路径 |
 | 18 | 运行时可观测性：实时步骤流 + 每步耗时 + 最慢步骤 | ✅ | 内核 `Attempt.durationMs` + `onEvent` 流；`run/rerun --verbose` 实测边跑边打印并给出 slowest |
@@ -565,3 +570,29 @@ CLI（已有）／工作台／MCP／CI
 **协议兼容性**：场景协议未升版（负值是对合法文档空间的放宽）；结果协议未升版（`expected` 是渲染文本）。冻结标签因规则 24 **重冻结**（`frozenAt: 2026-10-11`，`revisions` 写明 2→1 与理由）——不是为了让测试变绿，而是语义确实变了。
 
 **实测**：`npm run verify` **174/174**（新增 12 项）；`npm run accept` **7/7**（verify 46.4s / matrix 144.5s 21 用例 0 偏差 / benchmark 131.2s / tri-entry 16.5s / agent-loop 16.6s / blocked 19.2s / serial 65.7s 10/10）。
+
+### A.14 2026-10-11 八轮：修复自身引入的信任边界扩大 + 入口安全
+
+来源：①一次针对**未读包**的独立审查（planner / mcp-server / workbench / reporter / cli-commands），12 条候选逐条核实；②对上一轮「观察器外置」改动的自查。**七条成立并修复，两条降级记录，一条不成立。**
+
+| # | 缺陷 | 严重度 | 修复 |
+| --- | --- | --- | --- |
+| A | 规则 1 只校验「SQL 里出现哪些表」，不校验语句类型；而口径已从源码变成应用配置 ⇒ 信任边界变宽。实测 `prepare("INSERT INTO t VALUES(1)").all()` 返回 `[]` 但**真的写入**；多语句 `;` 亦被接受 | 高（运行中改写被测应用 = 伪造结论） | 规则 28：必须是单条 `SELECT`/`WITH`（去注释后判定），运行前再验一次；表/列名必须是纯标识符（被拼进 dump SQL）。6 条负例 + 1 条正例回归 |
+| B | 没有任何观察器声明时**静默回退** fixture 预设 ⇒ 第三方应用只要有同名表就会用 `course-1`/`holder_rc` 的口径给出自信的错误结论 | 高（最典型的假结论来源） | 规则 29：两个参考应用各自随目录提供 `reality-check.observers.json`（与预设常量由测试钉住，防漂移）；入口存在却无声明 ⇒ 具名配置错误。**分级**：入口不存在 ⇒ 环境缺失，保持 `blocked`，不提前变成 exit 64 |
+| C | CLI `--run-id` 无校验 ⇒ `export --run-id ../.. --pack out` 既读取任意 `result.json`，又对 `out` **之外**的目录 `rm -rf`（MCP 侧早有守卫，CLI 侧没有） | 高（破坏性） | 规则 31：`runIdProblem()`/`isSafeRunId()` 落到 `@rc/protocol` 单一来源，CLI `export`/`rerun`/`pack`（含 pack 内部再验一次）与 MCP 共用；回归测试真的建一个受害目录并断言它还在 |
+| D | 侧车/报告写失败抛异常 ⇒ 一次真实 `failed`（exit 1）在 CI 上变成 exit 70 的工具错误，真实回归被当成环境抖动；`readEvents` 一行 JSON 损坏也会拖垮整次运行 | 高（结论被呈现问题顶掉） | 规则 30：结论与呈现分离。抽出 `writeRunArtifacts()`，失败返回 warning、不抛不改退出码，CLI 与工作台都打到 stderr；`readEvents` 返回 `{events, warnings}`。工作台 payload 增 `warnings` |
+| E | MCP 进程级 `uncaughtException` 只写日志；串行队列里一个永不 settle 的 promise 会让后续请求（含 `ping`）全部挂死 —— 服务器活着但不回答 | 中高（可用性） | `inFlight` 追踪 + `failInFlight()`：进程级异常会终结在途请求（JSON-RPC INTERNAL 错误），队列继续；幂等（无在途请求时不造响应，避免污染 stdout 协议流） |
+| F | 工作台运行不写 `cli.json` 侧车 ⇒ 工作台跑出来的 run 无法 `rerun`、`export --pack` 退化成模式规则，「三入口一致」不成立 | 中 | 写入侧车（scenarioPath + seed），并加回归测试：工作台跑完后用 CLI `rerun --run-id` 真跑一遍通过 |
+| G | 工作台 `/api/run` 对非法 `seed`/`fault` 静默丢弃，按默认值运行 ⇒ 用户拿到 200 + verdict，以为是「指定种子下的结论」 | 中 | 返回 400 并说明原因（与 CLI `flagInt` 的 exit 64 口径一致） |
+
+**降级记录（修了但优先级低）**：`pack` 丢弃长度 < 3 的敏感值（逐字替换会毁掉正常内容）——原先是**静默**丢弃，现写进 `pack.json` 的 `notes`，让读包的人知道反扫边界；CLI `process.exit()` 紧跟 stdout 写入在管道下可能截断输出；工作台前端 `esc()` 用在 `onclick` 的 JS 字符串上下文（转义上下文不匹配，本地工具、利用门槛高）。
+
+**不成立（核实后未改）**：MCP 配置不校验 `tools` 版本 / `adapter.module`——已核对 `packages/mcp-server/src/config.ts`，CLI 的白名单校验在 `loadConfig` 内部，MCP 走的是同一份文件解析但确实缺 `tools` 与 `adapter.module` 两项；此项**留待下一轮**，因为改它要动 MCP 的配置加载路径，而本轮已经在同一文件改了三处，不宜混在一起。
+
+**协议兼容性**：场景/结果协议均未升版——观察者声明位置、runId 形状、warning 通道都不改变文档化语义；`RunOutcome` 增 `warnings` 属 CLI 内部结构。两个自带 fixture 应用新增 `reality-check.observers.json`（属应用侧声明，不是协议字段）。
+
+**实测**：`npm run verify` **187/187**（新增 13 项：只读 SQL 6 + 标识符 1 + 声明分级 1 + 预设漂移 1 + runId 4 + 呈现分离 2 + in-flight 1；另修正 1 条旧测试的过时断言——booking 应用清单里本就不该有 exam 观察器）；`npm run accept` **7/7**（verify 43.2s / matrix 159.2s / benchmark 142.5s / tri-entry 17.8s / agent-loop 17.8s / blocked 20.3s / serial 69.0s 10/10）。
+
+**门禁抓出的工具侧漏改**（本轮最有价值的一条自检）：新规则（应用必须声明观察器）让 `agent-loop` 关卡**失败**——该脚本把 fixture 应用复制到临时目录模拟「外部项目」，复制时只抄了 `server.js`，没抄新的声明文件。修复脚本后通过。这说明新规则在真实工具链里确实生效，也说明独立进程 + 独立目录的门禁比单测更强。
+
+**被测试逼出来的一次修正**：最初打算「缺观察器声明一律 exit 64」，回归测试显示这会把「应用入口根本不存在」这一类环境缺失提前变成配置错误——真实原因应是「应用没搭起来」，运行本应以 `blocked`（exit 3）结束。改为分级（规则 29）。

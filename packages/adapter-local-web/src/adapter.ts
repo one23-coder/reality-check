@@ -52,6 +52,10 @@ export interface LocalWebAdapterOptions {
   observersFile?: string;
   /** SQL 层只读白名单 (规则 1). Defaults to the union of declared tables. */
   observedTables?: string[];
+  /** Opt in to the bundled fixture preset when the app declares no observers.
+   * Only safe for callers that do NOT observe (static capability gating); a real
+   * run must declare its own 口径 — see `resolveObserverConfig`. */
+  allowBundledPreset?: boolean;
 }
 
 export interface SetupEnvOptions {
@@ -106,6 +110,13 @@ export const BOOKING_OBSERVERS: Record<string, ObserverSpec> = {
     tables: ["waitlist"],
     columns: ["account"],
   },
+  // String-valued observer for op "eqStr": who holds the promoted booking
+  // (waitlist-order-wrong detection — 方案 §3.1 matrix).
+  "booking-holder": {
+    sql: "SELECT account FROM bookings WHERE course_id = 'course-1' AND account NOT IN ('holder_rc','holder2_rc') ORDER BY id ASC LIMIT 1",
+    tables: ["bookings"],
+    columns: ["account"],
+  },
 };
 
 /** 自带参考应用 exam-seat-app 的观察器预设（同上：绑在该应用 schema 上）。 */
@@ -120,13 +131,8 @@ export const EXAM_OBSERVERS: Record<string, ObserverSpec> = {
     tables: ["exams", "reservations"],
     columns: ["left"],
   },
-  // String-valued observers for op "eqStr": who holds the promoted booking /
-  // reservation (waitlist-order-wrong detection — 方案 §3.1 matrix).
-  "booking-holder": {
-    sql: "SELECT account FROM bookings WHERE course_id = 'course-1' AND account NOT IN ('holder_rc','holder2_rc') ORDER BY id ASC LIMIT 1",
-    tables: ["bookings"],
-    columns: ["account"],
-  },
+  // String-valued observer for op "eqStr": who holds the promoted reservation
+  // (waitlist-order-wrong detection — 方案 §3.1 matrix).
   "reservation-holder": {
     sql: "SELECT account FROM reservations WHERE exam_id = 'exam-1' AND account NOT IN ('holder_rc','holder2_rc') ORDER BY id ASC LIMIT 1",
     tables: ["reservations"],
@@ -134,9 +140,10 @@ export const EXAM_OBSERVERS: Record<string, ObserverSpec> = {
   },
 };
 
-/** 缺省预设 = 两个自带参考应用的并集。仅为向后兼容保留：一个**新应用**若不提供
- * observers 会静默拿到这组 SQL，第一次观察就会因为表/列不存在而报错（或更糟：
- * 同名表含义不同却查出了数据）。接入新应用必须显式声明。 */
+/** 缺省预设 = 两个自带参考应用的并集。**仅供显式 opt-in 的静态用途**（例如 MCP 的
+ * 能力门禁：那里不发生任何观察）。一次真实运行拿不到这套口径是有意为之——两个参考
+ * 应用各自在 `fixtures/<app>/reality-check.observers.json` 里声明自己的口径，
+ * 由 adapter.test.ts 钉住两份文件与常量一致。 */
 export const BUNDLED_OBSERVERS: Record<string, ObserverSpec> = {
   ...BOOKING_OBSERVERS,
   ...EXAM_OBSERVERS,
@@ -157,6 +164,41 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string");
 }
 
+/** 纯 SQL 标识符：表名/列名会被**拼接**进 dump 语句（`SELECT * FROM <table>`），
+ * 不是参数化绑定，所以必须校验形状。 */
+const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function stripSqlComments(sql: string): string {
+  return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, " ");
+}
+
+/** 规则 1「SQL 层只读」不只要校验表名，还要校验**语句类型**。
+ *
+ * 观察器口径现在由**应用配置**提供（不再写死在适配器源码里），信任边界因此变宽。
+ * 实测：`db.prepare("INSERT INTO t VALUES (1)").all()` 返回 `[]`，但行真的写进了库。
+ * 也就是说一条写语句会静默改写被测应用的状态——运行中被改状态，等于伪造结论，
+ * 这是这个项目最不能接受的一类失败。`;`（多语句）同理。 */
+function assertReadOnlySql(id: string, sql: string, source: string): void {
+  const body = stripSqlComments(sql);
+  if (body.includes(";"))
+    throw new Error(
+      `${source}: observer "${id}" sql must be a single statement (found ";"; read-only rule 规则 1)`,
+    );
+  if (!/^\s*(?:select|with)\b/i.test(body))
+    throw new Error(
+      `${source}: observer "${id}" sql must start with SELECT or WITH (read-only, 规则 1); got "${sql.trim().slice(0, 48)}"`,
+    );
+}
+
+function assertIdentifiers(values: string[], what: string, id: string, source: string): void {
+  for (const v of values) {
+    if (!IDENT_RE.test(v))
+      throw new Error(
+        `${source}: observer "${id}" declares ${what} "${v}" which is not a plain SQL identifier`,
+      );
+  }
+}
+
 /** Validate + copy an observers record; every failure names the offending id. */
 function normalizeObservers(input: unknown, source: string): Record<string, ObserverSpec> {
   if (typeof input !== "object" || input === null || Array.isArray(input))
@@ -172,6 +214,9 @@ function normalizeObservers(input: unknown, source: string): Record<string, Obse
       throw new Error(`${source}: observer "${id}" needs "tables": non-empty string[]`);
     if (!isStringArray(o?.columns))
       throw new Error(`${source}: observer "${id}" needs "columns": non-empty string[]`);
+    assertReadOnlySql(id, o.sql, source);
+    assertIdentifiers(o.tables, "table", id, source);
+    assertIdentifiers(o.columns, "column", id, source);
     out[id] = { sql: o.sql, tables: [...o.tables], columns: [...o.columns] };
   }
   if (Object.keys(out).length === 0)
@@ -184,6 +229,8 @@ function assertTablesDeclared(
   observedTables: string[],
   source: string,
 ): void {
+  // observedTables 会被拼进 dump 语句，先验形状再验归属。
+  assertIdentifiers(observedTables, "table", "(observedTables)", source);
   for (const [id, o] of Object.entries(observers)) {
     for (const table of o.tables) {
       if (!observedTables.includes(table))
@@ -219,13 +266,15 @@ function parseObserversFile(raw: string, file: string): {
   return { observers, observedTables };
 }
 
-/** Options → app-dir config file → bundled presets (in that order). */
+/** Options → app-dir config file → (only if explicitly allowed) bundled presets. */
 function resolveObserverConfig(opts: LocalWebAdapterOptions): {
   observers: Record<string, ObserverSpec>;
   observedTables: string[];
 } {
   if (opts.observers !== undefined) {
     const observers = normalizeObservers(opts.observers, "adapter options");
+    if (opts.observedTables !== undefined && !isStringArray(opts.observedTables))
+      throw new Error("adapter options: observedTables must be a non-empty string[]");
     const observedTables =
       opts.observedTables ?? [...new Set(Object.values(observers).flatMap((o) => o.tables))];
     assertTablesDeclared(observers, observedTables, "adapter options");
@@ -239,7 +288,23 @@ function resolveObserverConfig(opts: LocalWebAdapterOptions): {
   const alongside = path.join(path.dirname(path.resolve(opts.appPath)), OBSERVERS_FILENAME);
   if (fs.existsSync(alongside))
     return parseObserversFile(fs.readFileSync(alongside, "utf8"), alongside);
-  return { observers: { ...BUNDLED_OBSERVERS }, observedTables: [...BUNDLED_OBSERVED_TABLES] };
+  // 观察器口径必须由**应用**声明。但要区分两类缺失：
+  //
+  // 1. 应用入口**不存在** → 环境缺失。一次运行会以 blocked 结束（setupEnv 起不来），
+  //    那才是真相；观察器在这里根本不会被用到，提前判成配置错误会把 blocked
+  //    变成 exit 64，掩盖"应用没搭起来"这个真正的原因。
+  // 2. 应用入口存在、却没有任何观察器声明 → 配置错误。这类"静默回退"最容易产出
+  //    **自信的错误结论**：第三方应用只要有一张同名表（含义不同），就会用 fixture 的
+  //    口径（course-1、holder_rc）给出一个看起来完全正常的结论。
+  if (!fs.existsSync(opts.appPath))
+    return { observers: { ...BUNDLED_OBSERVERS }, observedTables: [...BUNDLED_OBSERVED_TABLES] };
+  if (opts.allowBundledPreset === true)
+    return { observers: { ...BUNDLED_OBSERVERS }, observedTables: [...BUNDLED_OBSERVED_TABLES] };
+  throw new Error(
+    `no observers declared for app "${opts.appPath}": put ${OBSERVERS_FILENAME} next to the app entry, ` +
+      `or set adapter.observers in the config, or pass options.observers ` +
+      `(refusing to silently fall back to the bundled fixture preset — it would answer with another app's 口径)`,
+  );
 }
 
 const SUPPORTED_OPS = [
@@ -528,7 +593,9 @@ export class LocalWebAdapter {
         `unknown observer "${observerId}"; known: ${Object.keys(this.observers).join(", ")}`,
       );
     }
-    // SQL 层只读白名单 (规则 1): every table named in the SQL must be declared.
+    // SQL 层只读 (规则 1): 语句类型 + 表名都必须在配置层被拒过一次。运行时再验一次，
+    // 因为 manifest() 是对外暴露的静态元数据，spec 可能来自自定义适配器而不是配置文件。
+    assertReadOnlySql(observerId, def.sql, "runtime");
     for (const match of def.sql.matchAll(TABLE_RE)) {
       const table = match[1];
       if (!table || !this.observedTables.includes(table)) {

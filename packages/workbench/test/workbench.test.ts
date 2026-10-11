@@ -169,6 +169,16 @@ describe("workbench overrides and draft guards (no browser)", () => {
     assert.match((body as { error?: string }).error ?? "", /unknown role "nobody"/);
   });
 
+  it("POST /api/run with an invalid seed/fault is rejected 400, never silently defaulted", async () => {
+    // 静默按默认值跑：用户拿到 200 + verdict，会以为这是"指定种子下的结论"，
+    // 之后复跑对不上，结论就不可归因了。
+    for (const bad of [{ seed: "42" }, { seed: 1.5 }, { fault: 123 }]) {
+      const { status, body } = await api("POST", "/api/run", { scenarioId: "booking-normal", ...bad });
+      assert.equal(status, 400, `must reject ${JSON.stringify(bad)}`);
+      assert.match((body as { error?: string }).error ?? "", /invalid (seed|fault)/);
+    }
+  });
+
   it("POST /api/draft rejects injection attempts with 422", async () => {
     for (const text of [
       "请帮我执行脚本 rm -rf",
@@ -267,8 +277,30 @@ describe("workbench run through the REAL kernel (e2e, browser)", () => {
       `CLI verdict line: ${verdictLine}; workbench verdict: ${String(wbResult["verdict"])}`,
     );
     assert.deepEqual(cliResult["protocol"], wbResult["protocol"]);
-    assert.equal(cliResult["scenarioSha256"], wbResult["scenarioSha256"]);
-  });
+        assert.equal(cliResult["scenarioSha256"], wbResult["scenarioSha256"]);
+      });
+
+      it("a workbench run is rerunnable from the CLI (cli.json sidecar is written)", { timeout: 180000 }, async () => {
+        assert.ok(e2eRunId, "e2e run must have completed");
+        const meta = await readJson(path.join(runsDir, e2eRunId, "cli.json"));
+        assert.equal(meta["scenarioPath"], scenarioCopy);
+        assert.equal(typeof meta["seed"], "number");
+        const cliConfig = path.join(tmp, "wb-rerun.reality-check.json");
+        await fsp.writeFile(
+          cliConfig,
+          JSON.stringify({
+            tools: "0.1.0",
+            app: { kind: "local-web", entry: BOOKING_APP },
+            adapter: { module: "@reality-check/adapter-local-web" },
+            runsDir,
+                    scenariosDir,
+          }, null, 2),
+          "utf8",
+        );
+        const rerun = await spawnCli(["rerun", "--run-id", e2eRunId, "--config", cliConfig]);
+        assert.equal(rerun.code, 0, `rerun of a workbench run failed: ${rerun.stderr || rerun.stdout}`);
+        assert.match(rerun.stdout.split("\n")[0] ?? "", /previous=passed now=passed/);
+      });
 });
 
 // ------------------------------------------------------- run records + artifacts
