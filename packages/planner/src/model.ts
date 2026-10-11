@@ -112,7 +112,10 @@ export async function planWithModel(
   return {
     scenario,
     params: sanitizeParams((parsed as { params?: unknown }).params),
-    fallback: "heuristic",
+    // 来源必须如实：这是**模型**选的场景，不是关键词启发式选的。此前写成
+    // "heuristic"，与同一返回里的 reason（"bounded model selected …"）自相矛盾，
+    // 工作台草案页会把错误的来源直接显示给用户。
+    fallback: "saved-scenario",
     needsModel: false,
     reason: `bounded model selected saved scenario "${scenario.id}"`,
   };

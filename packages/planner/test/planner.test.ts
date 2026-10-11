@@ -67,6 +67,34 @@ describe("pickScenario keyword heuristic", () => {
     assert.deepEqual(pickScenario(req("帮我报名")).params, {});
   });
 
+  it("英文关键词按整词匹配：噪声词不会把请求判成另一个类别", () => {
+    // race/book/last 曾经是裸子串：trace、facebook 都会被当成"有线索"，于是一次
+    // 无关请求会**高置信度地**跑错场景（needsModel:false + fallback:heuristic）。
+    for (const text of ["please trace the login flow", "check facebook registration page"]) {
+      const d = pickScenario(req(text));
+      assert.equal(d.needsModel, true, `${text} must not be treated as a category clue`);
+      assert.equal(d.scenario, undefined, text);
+    }
+    // "last-minute cancellation" 的真实意图是取消，不是争抢：旧代码因为 "last" 出现在
+    // 更前面而判成 contend。
+    assert.equal(
+      pickScenario(req("last-minute cancellation of my booking")).scenario?.id,
+      "booking-cancel-waitlist",
+    );
+    // 词形变化仍然命中（词首匹配，不要求词尾）
+    assert.equal(pickScenario(req("race for the last seat")).scenario?.id, "booking-contend");
+    assert.equal(pickScenario(req("please book a slot")).scenario?.id, "booking-normal");
+    assert.equal(pickScenario(req("bookings overview")).scenario?.id, "booking-normal");
+  });
+
+  it("count 抽取：显式 n= 优先于自然语句，超出上下界则不猜", () => {
+    // "10人会议室…n=3" 想要的是 3：显式赋值比散文里的数字可靠。
+    assert.equal(pickScenario(req("10人会议室，抢最后名额 n=3")).params.count, 3);
+    // 容量/无关数字（超出 1..1000）不当作人数：宁可不给参数。
+    assert.deepEqual(pickScenario(req("9999人抢票")).params, {});
+    assert.deepEqual(pickScenario(req("0人抢票")).params, {});
+  });
+
   it("no category clue -> needsModel with NO scenario (no default guessed, 方案 §3.3 规则 9)", () => {
     const d = pickScenario(req("随便看看这个系统"));
     assert.equal(d.needsModel, true);
@@ -175,6 +203,10 @@ describe("planWithModel fallbacks", () => {
     assert.equal(d.needsModel, false);
     assert.equal(d.scenario?.id, "booking-contend");
     assert.deepEqual(d.params, { count: 3 });
+    // 来源必须如实：这是模型选的，不是关键词启发式选的（曾写成 "heuristic"，
+    // 与同一返回里的 reason 自相矛盾，工作台会把错误来源显示给用户）。
+    assert.equal(d.fallback, "saved-scenario");
+    assert.match(d.reason, /bounded model selected/);
   });
 });
 

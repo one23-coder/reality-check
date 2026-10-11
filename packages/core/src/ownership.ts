@@ -129,8 +129,11 @@ export async function claimDataRoot(
   if (existing !== undefined) {
     const prior = JSON.parse(existing) as OwnershipLedger;
     if (prior.runId !== runId && prior.entries.length > 0)
+      // 提示必须指向**真实存在**的手段：曾经写的是 "pass --fresh"，但 CLI/MCP/工作台
+      // 都没有这个开关（这类"看起来很可行"的错误提示比没有提示更浪费时间）。
       throw configError(
-        `data root "${root}" is owned by run ${prior.runId}; pass --fresh or remove it explicitly`,
+        `data root "${root}" is still owned by run ${prior.runId} (its ledger is non-empty); ` +
+          `remove that directory explicitly, or point app/run config at a different data root`,
       );
   }
   const registry = new OwnershipRegistry(emptyLedger(runId, root));

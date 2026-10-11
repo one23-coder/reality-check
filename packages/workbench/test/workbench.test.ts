@@ -118,6 +118,9 @@ describe("workbench static UI and scenario catalog", () => {
     for (const needle of ["本地演练工作台", "历史观察", "新运行", "运行记录", "场景草案", "复跑"]) {
       assert.ok(html.includes(needle), `UI must contain "${needle}"`);
     }
+    // runId 只做数据、不进 onclick 的 JS 源码字符串（转义上下文不匹配），点击靠事件委托。
+    assert.ok(html.includes('class="open-run"'), "run links must use a data attribute, not an onclick literal");
+    assert.ok(html.includes("data-run-id="), "the run id must travel in a data attribute");
   });
 
   it("GET /api/scenarios lists the seeded scenario with its rule count", async () => {
@@ -315,9 +318,36 @@ describe("workbench run records and artifact serving", () => {
     assert.ok(entry, "e2e run must be listed");
     assert.equal(entry.verdict, "passed");
     assert.equal(entry.scenarioId, "booking-normal");
+    // 退出码由 verdict 唯一映射：UI 有一列"退出码"，数据源必须真的提供它
+    // （此前 RunSummary 从不返回 exitCode，那一列恒为空白）。
+    assert.equal((entry as { exitCode?: number }).exitCode, 0);
     // sorted descending by startedAt
     const sorted = [...runs].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     assert.deepEqual(runs, sorted);
+  });
+
+  it("a damaged timeline line is skipped, named, and does not empty the timeline", async () => {
+    // 造一个"事件流里有一行坏掉"的运行：其余事件照常显示，坏行被计数说明。
+    const runId = "rc-synthetic-damaged";
+    const dir = path.join(runsDir, runId);
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(
+      path.join(dir, "result.json"),
+      JSON.stringify({ runId, scenarioId: "booking-normal", verdict: "passed", startedAt: "2026-01-01T00:00:00Z" }),
+      "utf8",
+    );
+    await fsp.writeFile(
+      path.join(dir, "events.jsonl"),
+      `${JSON.stringify({ seq: 1, t: "2026-01-01T00:00:00Z", kind: "run-started", detail: {} })}\nnot json at all\n`,
+      "utf8",
+    );
+    const { status, body } = await api("GET", `/api/run/${runId}`);
+    assert.equal(status, 200);
+    const detail = body as { events: { kind: string }[]; eventsSkipped: number };
+    assert.equal(detail.events.length, 1, "the readable event must survive");
+    assert.equal(detail.events[0]?.kind, "run-started");
+    assert.equal(detail.eventsSkipped, 1, "the damaged line must be named, not silently dropped");
+    await fsp.rm(dir, { recursive: true, force: true });
   });
 
   it("GET /api/run/:id returns result, events and htmlPath", async () => {

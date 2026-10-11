@@ -5,7 +5,7 @@
  */
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { validateScenario, type Scenario, type TimelineEvent } from "@rc/protocol";
+import { VERDICT_EXIT, validateScenario, type Scenario, type TimelineEvent, type Verdict } from "@rc/protocol";
 
 export interface ScenarioSummary {
   id: string;
@@ -21,6 +21,9 @@ export interface RunSummary {
   scenarioId: string;
   verdict: string;
   startedAt: string;
+  /** 退出码由 verdict 唯一映射（协议 §10）。UI 有一列"退出码"，此前数据源从不提供
+   * 它，于是那一列恒为空白——表头承诺的字段必须真的送来。未知 verdict 时为 undefined。 */
+  exitCode?: number;
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -84,11 +87,14 @@ export async function listRuns(runsDir: string): Promise<RunSummary[]> {
       const value: unknown = JSON.parse(await fsp.readFile(file, "utf8"));
       if (!isPlainObject(value)) continue;
       const startedAt = value["startedAt"];
+      const verdict = typeof value["verdict"] === "string" ? value["verdict"] : "unknown";
+      const exitCode = (VERDICT_EXIT as Record<string, number | undefined>)[verdict];
       out.push({
         runId: typeof value["runId"] === "string" ? value["runId"] : runId,
         scenarioId: typeof value["scenarioId"] === "string" ? value["scenarioId"] : "unknown",
-        verdict: typeof value["verdict"] === "string" ? value["verdict"] : "unknown",
+        verdict,
         startedAt: typeof startedAt === "string" ? startedAt : "",
+        ...(exitCode !== undefined ? { exitCode } : {}),
       });
     } catch {
       // no result.json -> not a finished run
@@ -101,15 +107,28 @@ export interface RunDetail {
   result: Record<string, unknown>;
   events: TimelineEvent[];
   htmlPath: string;
+  /** How many timeline lines could not be parsed. A damaged line must not
+   * empty the whole timeline: the rest of the run is still evidence. */
+  eventsSkipped: number;
 }
 
-function parseEvents(text: string): TimelineEvent[] {
+/** 逐行解析时间线：**一行坏掉不等于整个时间线不存在**。
+ *
+ * 此前任何一行非法 JSON 都会让异常冒泡到外层 catch，`events` 保持 `[]`，详情页的
+ * 时间线变成空表，而 result.json 照常渲染——用户会以为这次运行什么事件都没产生。
+ * 与 CLI 侧 `readEvents`（八轮已改为容错 + warning）保持同一口径。 */
+function parseEvents(text: string): { events: TimelineEvent[]; skipped: number } {
   const events: TimelineEvent[] = [];
+  let skipped = 0;
   for (const line of text.split("\n")) {
     if (line.trim() === "") continue;
-    events.push(JSON.parse(line) as TimelineEvent);
+    try {
+      events.push(JSON.parse(line) as TimelineEvent);
+    } catch {
+      skipped += 1;
+    }
   }
-  return events;
+  return { events, skipped };
 }
 
 /** Full run detail: result.json + events.jsonl + the on-disk report path. */
@@ -123,10 +142,13 @@ export async function readRunDetail(runsDir: string, runId: string): Promise<Run
     return undefined;
   }
   let events: TimelineEvent[] = [];
+  let eventsSkipped = 0;
   try {
-    events = parseEvents(await fsp.readFile(path.join(runDir, "events.jsonl"), "utf8"));
+    const parsed = parseEvents(await fsp.readFile(path.join(runDir, "events.jsonl"), "utf8"));
+    events = parsed.events;
+    eventsSkipped = parsed.skipped;
   } catch {
     // a run without events.jsonl still shows its result
   }
-  return { result, events, htmlPath: path.join(runDir, "report.html") };
+  return { result, events, htmlPath: path.join(runDir, "report.html"), eventsSkipped };
 }

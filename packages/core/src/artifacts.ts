@@ -12,7 +12,7 @@
  * is never evidence.
  */
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   ARTIFACTS_VERSION,
@@ -170,8 +170,16 @@ export class RunArtifacts {
     return null;
   }
 
-  /** Write the final result.json. */
+  /** Write the final result.json **atomically** (tmp + rename).
+   *
+   * 直接 writeFile 会在进程被杀/磁盘满时留下半截 JSON；而下游（工作台运行列表、
+   * `rerun`、`export --pack`）对解析失败的处理是"静默跳过"，于是那次运行会**从记录里
+   * 彻底消失**——用户会以为它从未发生。rename 在同一文件系统上是原子的：要么是旧内容，
+   * 要么是完整的新内容，不存在"写了一半的结论"。 */
   async writeResult(result: RunResult): Promise<void> {
-    await writeFile(join(this.dir, RESULT_FILE), JSON.stringify(result, null, 2), "utf8");
+    const target = join(this.dir, RESULT_FILE);
+    const tmp = `${target}.tmp-${process.pid}`;
+    await writeFile(tmp, JSON.stringify(result, null, 2), "utf8");
+    await rename(tmp, target);
   }
 }

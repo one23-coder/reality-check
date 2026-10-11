@@ -182,4 +182,19 @@ describe("RunArtifacts layout", () => {
     assert.equal(lines.length, 1);
     assert.equal(JSON.parse(lines[0] ?? "").kind, "run-started");
   });
+
+  it("writes result.json atomically and leaves no temp file behind", async () => {
+    const { readdir } = await import("node:fs/promises");
+    const artifacts = await makeArtifacts();
+    await artifacts.writeResult(minimalResult());
+    // 直写会留下"半截 JSON"，而下游（运行列表/rerun/export --pack）对解析失败是静默
+    // 跳过——那次运行会从记录里彻底消失。tmp + rename 保证：要么旧内容，要么完整新内容。
+    const names = await readdir(artifacts.dir);
+    assert.ok(names.includes("result.json"));
+    assert.deepEqual(
+      names.filter((n) => n.startsWith("result.json.tmp")),
+      [],
+      "the temp file must not survive the rename",
+    );
+  });
 });

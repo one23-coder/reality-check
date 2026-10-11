@@ -166,11 +166,13 @@ async function loadRuns() {
   const runs = Array.isArray(body) ? body : [];
   $("runs-body").innerHTML = runs.length === 0
     ? `<tr><td colspan="6" class="muted">暂无运行记录</td></tr>`
+    // runId 放进 data 属性、由事件委托读取：拼进 onclick 的 JS 字符串里时，
+    // HTML 属性会先把 &#39; 解引用回引号再交给 JS 解析，转义上下文并不匹配。
     : runs.map((r) => `<tr>
         <td class="mono">${esc(r.runId)}</td><td class="mono">${esc(r.scenarioId)}</td>
         <td>${badge(r.verdict)}</td><td>${esc(r.exitCode ?? "")}</td>
         <td class="mono">${esc(r.startedAt)}</td>
-        <td><a href="#" onclick="openRun('${esc(r.runId)}');return false;">查看</a></td>
+        <td><a href="#" class="open-run" data-run-id="${esc(r.runId)}">查看</a></td>
       </tr>`).join("");
 }
 
@@ -181,25 +183,38 @@ async function openRun(runId) {
   if (status !== 200) { alert(`读取运行失败: ${body && body.error}`); return; }
   currentDetail = body;
   const r = body.result;
+  // 字段防御：列表接口对每个字段都做了 typeof 判断，详情渲染却直接取 r.evidence.length。
+  // 一份"合法 JSON 但字段缺失"的 result.json 会让这里抛 TypeError，把后面的规则表、
+  // 时间线整个中断，而且**不显示任何错误**——面板停在一半，用户只会觉得"没数据"。
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const evidence = arr(r.evidence);
   $("detail-card").classList.remove("hidden");
-  $("detail-runid").textContent = r.runId;
+  $("detail-runid").textContent = r.runId ?? runId;
   $("detail-meta").innerHTML =
     `场景 <b class="mono">${esc(r.scenarioId)}</b> · seed ${esc(r.seed)} · 结论 ${badge(r.verdict)} · ` +
-    `开始 ${esc(r.startedAt)} · 结束 ${esc(r.finishedAt)} · 证据 ${r.evidence.length} 份`;
-  $("detail-rules").innerHTML = (r.ruleEvaluations || []).map((ev) => `<tr>
+    `开始 ${esc(r.startedAt)} · 结束 ${esc(r.finishedAt)} · 证据 ${evidence.length} 份`;
+  $("detail-rules").innerHTML = arr(r.ruleEvaluations).map((ev) => `<tr>
       <td><b>${esc(ev.ruleId)}</b></td><td class="mono">${esc(ev.assertionId)}</td>
       <td>${badge(ev.verdict)}</td>
       <td class="mono">${esc(JSON.stringify(ev.observed))}</td>
       <td class="mono">${esc(ev.expected)}</td>
-      <td>${(ev.evidenceRefs || []).map((e) =>
-        `<a href="/runs/${encodeURIComponent(runId)}/${esc(e.file)}" target="_blank">${esc(e.kind)}#${e.seq}</a>`).join("<br>") || '<span class="muted">无</span>'}</td>
-    </tr>`).join("");
-  $("detail-timeline").innerHTML = (body.events || []).map((e) => `<tr>
+      <td>${arr(ev.evidenceRefs).map((e) =>
+        // 证据文件名要按 URL 规则编码：esc 只挡 HTML，文件名里的 # 会把链接截成片段。
+        `<a href="/runs/${encodeURIComponent(runId)}/${String(e.file ?? "").split("/").map(encodeURIComponent).join("/")}" target="_blank">${esc(e.kind)}#${e.seq}</a>`).join("<br>") || '<span class="muted">无</span>'}</td>
+    </tr>`).join("") || '<tr><td colspan="6" class="muted">无规则判定</td></tr>';
+  const timelineRows = arr(body.events).map((e) => `<tr>
       <td class="mono">${e.seq}</td><td class="mono">${esc(e.t)}</td><td>${esc(e.kind)}</td>
       <td class="mono">${e.actor ? esc(e.actor) : ""}</td>
       <td class="mono">${e.causation !== undefined && e.causation !== null ? e.causation : ""}</td>
       <td class="mono">${esc(JSON.stringify(e.detail))}</td>
-    </tr>`).join("");
+    </tr>`);
+  // 坏行必须被说出来：时间线"看起来是空的"和"有几行读不出来"是两件事。
+  if (body.eventsSkipped > 0) {
+    timelineRows.push(
+      `<tr><td colspan="6" class="muted">另有 ${body.eventsSkipped} 行时间线无法解析（已跳过，其余事件照常显示）</td></tr>`,
+    );
+  }
+  $("detail-timeline").innerHTML = timelineRows.join("") || '<tr><td colspan="6" class="muted">无事件</td></tr>';
   $("detail-report").innerHTML = `<a href="/runs/${encodeURIComponent(runId)}/report.html" target="_blank">${esc(body.htmlPath)}</a>`;
   $("detail-card").scrollIntoView({ behavior: "smooth" });
 }
@@ -215,7 +230,7 @@ async function startRun(payload) {
   }
   $("run-result").innerHTML =
     `<div class="ok"><span class="tag fresh">新运行</span> 完成：runId <span class="mono">${esc(body.runId)}</span> · ` +
-    `${badge(body.verdict)} · 退出码 ${body.exitCode} · <a href="#" onclick="openRun('${esc(body.runId)}');return false;">查看历史观察</a></div>`;
+    `${badge(body.verdict)} · 退出码 ${body.exitCode} · <a href="#" class="open-run" data-run-id="${esc(body.runId)}">查看历史观察</a></div>`;
   await loadRuns();
 }
 
@@ -262,6 +277,14 @@ $("draft-submit").addEventListener("click", async () => {
 });
 
 $("runs-refresh").addEventListener("click", loadRuns);
+
+// 事件委托：runId 只做数据，不进 JS 源码字符串。
+document.addEventListener("click", (e) => {
+  const link = e.target.closest && e.target.closest("a.open-run");
+  if (!link) return;
+  e.preventDefault();
+  openRun(link.dataset.runId);
+});
 loadScenarios().then(loadRuns);
 </script>
 </body>

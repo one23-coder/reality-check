@@ -116,6 +116,11 @@
 33. **并发组的结果必须与输入逐一对上**（2026-10-11 九轮）：适配器契约要求 `runBarrier` 「每个步骤一个 Attempt，按输入顺序」。内核此前**只遍历返回的数组**，从不比对：少返回一个步骤，那个步骤就既没执行、也不会被「步骤 error ⇒ blocked」的门禁抓到，随后的断言会在**这一步没发生**的状态上求值——典型的假通过。现在内核自己校验条数与顺序（一致性套件查的是适配器，内核不能把契约当前提），不符即 blocked 并点名。
 34. **争抢是「同刻发起」，不是「证明同时落库」**（2026-10-11 九轮）：`runBarrier` 先把组内每个提交**预热**（建页、等控件可见可点）完成，再在**同一个 tick** 里连续派发全部点击——偏移被压小，但没有被消除（每次点击仍各自做一次可点性复查，网络往返也不受控）。因此每个 Attempt 记下 `detail.fireOffsetMs`：**「这场争抢是否真的发生」是可以查的**，不靠相信注释。另外建页在并发下改为**单次飞行**（同一 actor 只建一个 context）：原先 `get` 与 `set` 之间隔着 `await`，并发调用会各建一个 context、后者覆盖前者——泄漏一个 context，而且两步跑在两页上、证据只取「最后写入」的那页。
 35. **条件步骤与断言共用同一把尺**（2026-10-11 九轮）：`when` 的条件判定走的是与断言同一套词汇，但**证据核验**这条曾漏掉：正式观察路径在证据引用核验失败时会降级（`evidence-file`），条件路径却把 `validRefs` 收下、继续用原始 `reading` 判定——于是证据文件被破坏时条件仍可能判 `held` 并**执行一步本不该发生的业务动作**。现在两条路径同一口径：核验失败 ⇒ 条件无法判定 ⇒ blocked（规则 22），不替用户选分支。
+36. **关键词必须从词首匹配**（2026-10-11 十轮）：`plan` 的关键词启发式原先用裸子串（`indexOf`），于是 `race` 命中 `trace`、`book` 命中 `facebook`、`last` 命中 `blast`——噪声被当成「有线索」，结果是**高置信度地**（`needsModel:false` + `fallback:heuristic`）选错场景，用户毫无提示地拿到另一个场景的结论。现在 ASCII 关键词按**词首**匹配（既杀掉 `trace`/`facebook`，又保留 `cancellation`/`bookings` 这类词形变化），中文仍按子串；`last` 改成短语 `last slot`/`last seat`（"last-minute cancellation" 的真意是取消，不是争抢）。计数抽取同样加边界：`9999人` 曾被截成 999 这个"看起来合理"的人数。
+37. **来源必须如实标注**（2026-10-11 十轮）：模型成功选定场景时，`fallback` 曾写成 `"heuristic"`，而同一条返回里的 `reason` 写着 "bounded model selected …"——自相矛盾，工作台草案页会把错误的规划来源显示给用户。现在如实写 `"saved-scenario"`。
+38. **结论文件必须原子落盘**（2026-10-11 十轮）：`result.json` 原先直接 `writeFile`，进程被杀/磁盘满会留下半截 JSON；而下游（运行列表、`rerun`、`export --pack`）对解析失败的处理是**静默跳过**——那次运行会从记录里彻底消失，用户以为它从未发生。现在 tmp + rename：要么旧内容，要么完整新内容。
+39. **一行坏掉不等于整条时间线不存在**（2026-10-11 十轮）：工作台的 `parseEvents` 无逐行容错，任何一行非法 JSON 都会让异常冒泡、`events` 保持 `[]`，详情页时间线变空表而 `result.json` 照常渲染——用户会以为这次运行什么事件都没产生。现在与 CLI 侧 `readEvents` 同一口径：坏行跳过并**计数说明**（`eventsSkipped`，UI 明写"另有 N 行无法解析"）。同批修掉的还有前端三处：详情渲染对 `result.json` 字段零防御（缺字段即抛 `TypeError`、面板停一半且无任何提示）、证据链接未做 URL 编码（文件名含 `#` 会截断）、`runId` 拼进 `onclick` 的 JS 字符串（HTML 属性会先解引用再交给 JS，转义上下文不匹配）——后者改为 `data-` 属性 + 事件委托。
+40. **错误提示必须指向真实存在的手段**（2026-10-11 十轮）：所有权冲突的提示曾写 "pass --fresh or remove it explicitly"，但 CLI/MCP/工作台都**没有** `--fresh` 这个开关——一个"看起来可行"的提示比没有提示更浪费用户时间。现在改为如实说明当前能做到的两件事（显式删除、或换一个数据根）。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -317,7 +322,7 @@ CLI（已有）／工作台／MCP／CI
 
 | # | 判据（可检验） | 现状 | 证据 / 缺口 |
 | --- | --- | --- | --- |
-| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = **201/201**；**`npm run accept` 一键 7/7 一次性跑通**（2026-10-11，见 A.12/A.14/A.15/A.16）；正反例矩阵 26 用例 0 偏差 |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = **205/205**；**`npm run accept` 一键 7/7 一次性跑通**（2026-10-11，见 A.12/A.14/A.15/A.16/A.17）；正反例矩阵 26 用例 0 偏差 |
 | 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
 | 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
 | 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
@@ -649,3 +654,22 @@ CLI（已有）／工作台／MCP／CI
 第三个应用同时进入正反例矩阵（`scripts/positive-negative-matrix.mjs` 新增 5 条）：**26 用例、0 偏差**（正确实现全部通过、故障实现全部归因到规则 id）。`npm run verify` **201/201**（新增 `packages/cli/test/adoption.test.ts` 6 项）；`npm run accept` **7/7**（verify 58.1s / matrix 207.9s / benchmark 163.7s / tri-entry 18.4s / agent-loop 17.1s / blocked 19.1s / serial 84.2s 10/10）。
 
 **诚实边界**：这是**同一作者、同一仓库内**的第三个应用，不是外部团队；它证明「接入路径不要求改适配器源码」（可自动验证），**不能**替代外部接入（判据 13 仍为 ⬜）。应用的错误实现是刻意造的（`RC_FAULT=overbooking`），正反例配对才有意义。
+
+### A.17 2026-10-11 十轮：规划器 / 产物完整性 / 工作台（8 条）
+
+来源：针对 `planner`、`core/artifacts.ts`、`workbench`（store + 前端）的独立审查，外加我自查 `core/ownership.ts` 时发现的一条。**8 条候选全部核实为真并修复**——这一轮没有推翻任何一条，但每条都自己拿代码证据核过。
+
+| # | 缺陷 | 严重度 | 修复 |
+| --- | --- | --- | --- |
+| 1 | `plan` 关键词裸子串：`race`→`trace`、`book`→`facebook`、`last`→`blast` ⇒ **高置信度选错场景**（`needsModel:false`） | 高（用户拿到另一个场景的结论） | 规则 36：词首匹配 + `last` 改短语 + 计数加数字边界 |
+| 2 | 模型成功选场景却标 `fallback:"heuristic"`，与 `reason` 自相矛盾 | 中 | 规则 37：如实标 `"saved-scenario"` |
+| 3 | `result.json` 非原子写；下游解析失败静默跳过 ⇒ 被中断的运行**从记录里消失** | 中 | 规则 38：tmp + rename |
+| 4 | 工作台 `parseEvents` 无逐行容错 ⇒ 一行坏掉整条时间线变空表，且不说明 | 中 | 规则 39：坏行跳过 + 计数说明（与 CLI 同口径） |
+| 5 | 工作台详情渲染对字段零防御 ⇒ 缺字段即抛 `TypeError`、面板停一半且无提示 | 中 | 规则 39：逐字段防御 + 空态文案 |
+| 6 | 运行列表"退出码"列恒为空白（`RunSummary` 从不返回 `exitCode`） | 低 | 由 `verdict` 经 `VERDICT_EXIT` 映射后提供 |
+| 7 | 证据链接未 URL 编码（文件名含 `#` 会截断）；`runId` 拼进 `onclick` 的 JS 字符串 | 低 | 规则 39：按段 `encodeURIComponent`；改 `data-` 属性 + 事件委托 |
+| 8 | 所有权冲突提示让人用**不存在**的 `--fresh` 开关 | 低 | 规则 40：提示改为真实可行的手段 |
+
+**实测**：`npm run verify` **205/205**（新增 4 项：planner 2 + 工作台 1 + 产物原子写 1，另扩展 2 项既有断言）；`npm run accept` **7/7**（verify 59.7s / matrix 176.7s / benchmark 144.0s / tri-entry 17.6s / agent-loop 17.4s / blocked 19.3s / serial 71.4s 10/10）。
+
+**诚实边界**：`result.json` 的原子写是**结构性**改进（没有构造出"写到一半被杀"的实测），断言的是"不留 tmp、内容完整"；工作台的坏行容错用**合成数据**（手写一行坏 JSON）验证，不是真实的并发交错；`planner` 的假阳性用具体文本钉住（`trace`/`facebook`/`last-minute`），词首匹配的取舍（保留 `cancellation`、放弃全词边界）是**主观选择**，已在规则 36 写明理由。
