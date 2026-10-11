@@ -105,7 +105,11 @@ node packages/cli/dist/src/main.js run   scenarios/my-app-normal.json --verbose
 { "id": "c2-submit", "actor": "c2", "op": "submit", "barrier": true }
 ```
 
-组内每个步骤各产生一个 Attempt（顺序与输入一致）。并发场景请保留重复实验的习惯：单次结果只说明「这次是这样」。
+组内每个步骤各产生一个 Attempt（顺序与输入一致；内核会校验这一点，少一个或顺序不对即判 `blocked` 并点名——否则后续断言就是在「那一步没发生」的状态上求值）。
+
+**诚实边界（重要）**：适配器保证的是「预热完成后**同一刻**发起提交」，**不是**「两笔写入真的同时落库」。它先把组内每个提交预热到可点（建页、等控件可见），再在同一个 tick 里连续派发点击；每次点击仍会各自做一次快速的可点性复查，网络往返也不受控。所以偏移被**压小**而不是被消除——每个 Attempt 的 `detail.fireOffsetMs` 记录了它相对本组派发时刻的偏移，**这场争抢是否真的发生是可以查的**，不靠相信注释。
+
+并发场景请保留重复实验的习惯：单次结果只说明「这次是这样」。
 
 ### 4.3 有界重试（`retry`）
 只用于吸收**基础设施抖动**（浏览器断开、瞬时超时），不是用来掩盖业务缺陷：
@@ -115,8 +119,9 @@ node packages/cli/dist/src/main.js run   scenarios/my-app-normal.json --verbose
 ```
 
 - `attempts`（1–5，超过在运行前拒绝）；`on` 默认 `["error"]`，可显式列出 `error`/`rejected`/`no-nav`/`completed`。
-- **每次尝试都留在时间线里**（`step-retry` 事件），该步骤的 Attempt 记录 `attemptIndex` 与被测时长；最终结论由**最后一次**尝试决定。
+- **每次尝试都留在时间线里**（`step-retry` 事件，含那次尝试的证据条数），该步骤的 Attempt 记录 `attemptIndex` 与被测时长；最终结论由**最后一次**尝试决定。
 - 因此重试可以让一次抖动变成 blocked 之外的成功，但**永远不会**把业务失败洗成通过（`rejected` 默认不触发重试）。
+- **已派发的写操作不许重放**：重试是「重放整个步骤」。对 `submit` 这类写动作，如果这一笔**已经发出去**、只是结果读不回来，再点一次就是**第二笔业务写入**——而那正是「允许重复提交」的应用最容易被推过断言线的地方。适配器据实上报 `attempt.detail.dispatched`（只有明确指向「还没轮到点击」的等待超时才报 `false`），内核遇到 `dispatched: true` 就**不重试**，并写一条 `step-retry-refused` 事件说明原因；`dispatched: false`（例如等待元素超时，什么都没发出去）照旧重试。
 - `barrier` + `retry` 同时声明会被拒绝：并发组没有「逐步骤重试」的语义。
 
 ### 4.4 条件步骤 `when`（场景 1.1，已实现）

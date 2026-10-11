@@ -6,6 +6,7 @@ export * from "./result.js";
 export * from "./explain.js";
 export * from "./v.js";
 export * from "./run-id.js";
+export * from "./tools-config.js";
 export { EVIDENCE_KINDS, validateManifest, type AdapterManifest } from "./manifest.js";
 
 // Explicit re-exports resolve ambiguous `export *` members (TS2308):

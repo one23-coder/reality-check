@@ -10,6 +10,7 @@ import path from "node:path";
 import {
   TOOLS_VERSION,
   VError,
+  checkToolsConfig,
   parseJsonStrict,
   validateScenario,
   vLiteral,
@@ -105,9 +106,7 @@ export function flagInt(args: ParsedArgs, name: string): number | undefined {
 
 // ------------------------------------------------------------------ config
 
-/** The `@reality-check/adapter-local-web` workspace package has historically
- * also been referenced as `@rc/adapter-local-web` in docs; both are accepted. */
-export const ADAPTER_MODULES = ["@reality-check/adapter-local-web", "@rc/adapter-local-web"] as const;
+export { ADAPTER_MODULES } from "@rc/protocol";
 
 export interface RcConfig {
   tools: typeof TOOLS_VERSION;
@@ -162,11 +161,10 @@ export function loadConfig(explicitPath?: string): RcConfig {
   } catch (e) {
     throw configError(e instanceof Error ? e.message : String(e));
   }
-  if (!(ADAPTER_MODULES as readonly string[]).includes(cfg.adapter.module)) {
-    throw configError(
-      `${file}: adapter.module must be one of [${ADAPTER_MODULES.join("|")}], got "${cfg.adapter.module}"`,
-    );
-  }
+  // 版本与适配器白名单的判定与 MCP 共用同一份实现（@rc/protocol/tools-config）：
+  // 同一份文件在两个入口必须得到同一个判决。
+  const problems = checkToolsConfig(value, file, { requireTools: true });
+  if (problems.length > 0) throw configError(problems.join("; "));
   const cwd = process.cwd();
   return {
     ...cfg,

@@ -25,9 +25,18 @@ process.on("unhandledRejection", (reason) => {
   server.failInFlight(`unhandledRejection: ${reason instanceof Error ? reason.message : String(reason)}`);
 });
 
-const server = new RealityCheckMcpServer(loadMcpConfig(), (line) => {
-  process.stdout.write(line + "\n");
-}, diag);
+// 配置在启动时读取：非法就在**任何请求之前**干净退出（与 CLI 同为 exit 64），
+// 不留一个"活着但永远答不对"的服务。此前这里抛出的异常会走到全局处理器，
+// 而处理器里引用的 `server` 尚未初始化。
+let server: RealityCheckMcpServer;
+try {
+  server = new RealityCheckMcpServer(loadMcpConfig(), (line) => {
+    process.stdout.write(line + "\n");
+  }, diag);
+} catch (e) {
+  diag(`config error: ${e instanceof Error ? e.message : String(e)}`);
+  process.exit(64);
+}
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 rl.on("line", (line) => server.handleLine(line));

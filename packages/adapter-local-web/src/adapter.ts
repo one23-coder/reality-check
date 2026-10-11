@@ -544,8 +544,14 @@ export class LocalWebAdapter {
     return attempt;
   }
 
-  /** Arm all group steps, then submit them concurrently on different pages —
-   * true contention (争抢同步屏障). Returns attempts in input order. */
+  /** Arm all group steps, then fire them in the same tick — contention (争抢同步屏障).
+   *
+   * 诚实边界：这里保证的是"预热完成后**同一刻**发起提交"，而不是"两笔写入真的同时
+   * 落库"。预热（建页、等控件可见可点）把 Playwright 的动作性检查提前做完，之后所有
+   * `click` 在同一个 tick 里连续派发；但每次 click 仍会各自做一次快速的可点性复查，
+   * 网络往返也不受我们控制，所以偏移是**被压小**而不是被消除。因此每一步的实际起跑
+   * 偏移写进 `detail.fireOffsetMs`——"这场争抢是否真的发生"是可以查的，不靠相信注释。
+   * Returns attempts in input order (每个步骤一个 Attempt，顺序不变). */
   async runBarrier(steps: Step[], ctx: StepContext): Promise<Attempt[]> {
     const attempts: Attempt[] = new Array(steps.length);
     const deferred: { index: number; step: Step; n: number }[] = [];
@@ -558,21 +564,35 @@ export class LocalWebAdapter {
       }
       attempts[i] = await this.runStep(step, ctx);
     }
-    const settled = await Promise.all(
-      deferred.map(async ({ step }) => {
+
+    // ① 并行预热：把"能不能点"这一步的等待全部前置。
+    const prepared = await Promise.all(
+      deferred.map(async (d) => {
         try {
-          return await this.performSubmit(step);
+          return { d, ready: await this.prepareSubmit(d.step), failure: null as Error | null };
         } catch (err) {
-          return {
-            stepId: step.id,
-            actor: step.actor,
-            op: step.op,
-            outcome: "error" as const,
-            detail: { error: err instanceof Error ? err.message : String(err) },
-          };
+          return { d, ready: null, failure: err instanceof Error ? err : new Error(String(err)) };
         }
       }),
     );
+
+    // ② 同一刻发起：没有任何 await 插在 click 之间（派发顺序由这里决定）。
+    const fireStart = Date.now();
+    const settled = await Promise.all(
+      prepared.map(async ({ d, ready, failure }) => {
+        if (failure !== null || ready === null)
+          return {
+            stepId: d.step.id,
+            actor: d.step.actor,
+            op: d.step.op,
+            outcome: "error" as const,
+            // 预热失败 = 还没有派发任何东西 → 重放是安全的（内核据此允许重试）。
+            detail: { error: failure?.message ?? "submit was not prepared", dispatched: false },
+          };
+        return this.fireSubmit(d.step, ready, fireStart);
+      }),
+    );
+
     for (let k = 0; k < deferred.length; k++) {
       const d = deferred[k] as { index: number; step: Step; n: number };
       const target = settled[k] as Attempt;
@@ -611,6 +631,10 @@ export class LocalWebAdapter {
     const db = new DatabaseSync(this.dbPath);
     let rows: Record<string, unknown>[];
     try {
+      // 被测应用仍持有写事务时，默认行为是立刻 SQLITE_BUSY —— 一次本来读得到的
+      // 观察会变成 observe-error（进而 inconclusive）。等一小会儿再放弃，让"读不到"
+      // 只在真的读不到时发生。
+      db.exec("PRAGMA busy_timeout = 5000");
       rows = db.prepare(def.sql).all() as Record<string, unknown>[];
     } finally {
       db.close();
@@ -645,9 +669,21 @@ export class LocalWebAdapter {
       const dump: Record<string, unknown[]> = {};
       const db = new DatabaseSync(this.dbPath);
       try {
+        // 多表 dump 必须在**一个快照**里读：逐表 SELECT 之间若被测应用提交了一笔写，
+        // dump 就会出现跨表自相矛盾的画面（bookings 与 capacity 不同步），而这份
+        // 取证是要拿给人当"当时就是这样"看的。DEFERRED 事务给出稳定快照。
+        db.exec("BEGIN DEFERRED");
         for (const table of this.observedTables) {
           dump[table] = db.prepare(`SELECT * FROM ${table}`).all();
         }
+        db.exec("COMMIT");
+      } catch (e) {
+        try {
+          db.exec("ROLLBACK");
+        } catch {
+          // 已回滚/未开启事务
+        }
+        throw e;
       } finally {
         db.close();
       }
@@ -755,15 +791,25 @@ export class LocalWebAdapter {
     return null;
   }
 
+  /** Test-visible: how many browser contexts are open right now.
+   *
+   * Public by design (like `noteChildError`): the concurrent-page-creation race
+   * cannot be reproduced on demand — it needs the same actor to submit twice
+   * inside one barrier group with no page yet — so tests assert the invariant
+   * directly (one context per actor, never an orphaned second one). */
+  openContextCount(): number {
+    return this.browser?.contexts().length ?? 0;
+  }
+
   private async ensurePage(actor: string): Promise<Page> {
     this.assertUp();
     let entry = this.pages.get(actor);
     if (!entry) {
-      // ONE browser context per role — multi-account isolation.
-      const context = await this.browser!.newContext();
-      const page = await context.newPage();
-      entry = { context, page };
-      this.pages.set(actor, entry);
+      // 并发段（runBarrier 的 Promise.all）里同一个 actor 可能同时在建页：get 与
+      // set 之间隔着 await，两次调用会各建一个 context，第二个覆盖第一个 ——
+      // 泄漏一个 context，而且两步跑在两页上、证据只取"最后写入"的那页（错位）。
+      // 单次飞行：并发调用共享同一个建页 promise。
+      entry = await this.ensurePageInFlight(actor);
     } else if (entry.page.isClosed()) {
       // A renderer crash closes the page but keeps the browser handle alive
       // (Playwright would otherwise report only "page has been closed").
@@ -772,6 +818,28 @@ export class LocalWebAdapter {
       );
     }
     return entry.page;
+  }
+
+  /** One in-flight page creation per actor (see `ensurePage`). */
+  private readonly pageCreation = new Map<string, Promise<PageEntry>>();
+
+  private async ensurePageInFlight(actor: string): Promise<PageEntry> {
+    const existing = this.pageCreation.get(actor);
+    if (existing !== undefined) return existing;
+    const creating = (async (): Promise<PageEntry> => {
+      // ONE browser context per role — multi-account isolation.
+      const context = await this.browser!.newContext();
+      const page = await context.newPage();
+      const entry: PageEntry = { context, page };
+      this.pages.set(actor, entry);
+      return entry;
+    })();
+    this.pageCreation.set(actor, creating);
+    try {
+      return await creating;
+    } finally {
+      this.pageCreation.delete(actor);
+    }
   }
 
   private async executeStep(step: Step): Promise<Attempt> {
@@ -822,9 +890,31 @@ export class LocalWebAdapter {
   /** Click a submit button and honestly classify what happened (规则 6: no
    * navigation => "no-nav", never a silent success). */
   private async performSubmit(step: Step): Promise<Attempt> {
-    const base = { stepId: step.id, actor: step.actor, op: step.op };
+    const ready = await this.prepareSubmit(step);
+    return this.fireSubmit(step, ready, Date.now());
+  }
+
+  /** Phase 1 of a submit: page + a control that is already actionable. Split out
+   * so a barrier group can do all of this BEFORE any click is dispatched. */
+  private async prepareSubmit(step: Step): Promise<{ page: Page; selector: string }> {
     const page = await this.ensurePage(step.actor);
     const selector = String(step.params?.selector ?? "button[type=submit]");
+    // 预算与原来 `page.click` 的等待一致（默认 30s）：预热只是把这次等待**提前**，
+    // 不是把容忍度调小。
+    await page.waitForSelector(selector, { state: "visible", timeout: 30_000 });
+    return { page, selector };
+  }
+
+  /** Phase 2: dispatch the click and classify the outcome. `fireStart` is the
+   * group's dispatch instant — the offset lands in the attempt detail so a
+   * report can show how tight the contention actually was. */
+  private async fireSubmit(
+    step: Step,
+    ready: { page: Page; selector: string },
+    fireStart: number,
+  ): Promise<Attempt> {
+    const { page, selector } = ready;
+    const base = { stepId: step.id, actor: step.actor, op: step.op };
     const navigated = page
       .waitForEvent("framenavigated", {
         predicate: (frame) => frame === page.mainFrame(),
@@ -834,17 +924,38 @@ export class LocalWebAdapter {
         () => true,
         () => false,
       );
-    await page.click(selector);
+    const firedAt = Date.now() - fireStart;
+    try {
+      await page.click(selector);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      // `dispatched` 是"这个写操作有没有真的发出去"的事实来源：内核据此决定
+      // **能不能重放这一步**（重放已派发的写入 = 第二笔业务写入）。这里必须保守：
+      // 只有当错误明确指向"还没轮到点击"（等待元素/可点性超时）时才说 false；
+      // 一旦错误文本指向导航/执行上下文销毁/元素脱离，说明点击很可能已经发出，
+      // 一律报 true（宁可少重试一次，也不多写一笔）。
+      const looksPostDispatch =
+        /navigat|context was destroyed|not attached|detached|execution context/i.test(message);
+      return {
+        ...base,
+        outcome: "error",
+        detail: { error: message, dispatched: looksPostDispatch, fireOffsetMs: firedAt },
+      };
+    }
     const didNavigate = await navigated;
     if (!didNavigate) {
-      return { ...base, outcome: "no-nav", detail: { url: page.url() } };
+      return {
+        ...base,
+        outcome: "no-nav",
+        detail: { url: page.url(), dispatched: true, fireOffsetMs: firedAt },
+      };
     }
     await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
     const banner = await readBanner(page);
     return {
       ...base,
       outcome: isRejected(banner) ? "rejected" : "completed",
-      detail: { url: page.url(), banner: banner.text },
+      detail: { url: page.url(), banner: banner.text, dispatched: true, fireOffsetMs: firedAt },
     };
   }
 

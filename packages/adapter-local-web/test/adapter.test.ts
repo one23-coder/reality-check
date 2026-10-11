@@ -445,6 +445,36 @@ test("an app that declares no observers is a named config error, never a silent 
   await rm(tmp, { recursive: true, force: true });
 });
 
+test("one same-actor submit pair in a concurrent group creates exactly one context", async () => {
+  const tmp = await makeTmp();
+  const runDir = path.join(tmp, "run");
+  const roles = [role("frank", "frank_rc", "pw-frank", "none")];
+  const adapter = createLocalWebAdapter({ appPath: BOOKING_APP });
+  try {
+    await adapter.setupEnv({ runDir, seed: 11, dataRoot: path.join(tmp, "data"), roles });
+    await adapter.registerAccounts(roles);
+    assert.equal(adapter.openContextCount(), 0, "no context before any step");
+    // 同一个 actor 两次提交、且此前还没有页面：建页是并发的（get 与 set 之间隔着
+    // await）。旧实现会各建一个 context，第二个覆盖第一个 —— 泄漏一个 context，
+    // 且两步跑在两页上、证据只取"最后写入"的那页。
+    const ctx = { runDir, seed: 11, event: async () => 0 };
+    const attempts = await adapter.runBarrier(
+      [
+        { id: "f1", actor: "frank", op: "submit" },
+        { id: "f2", actor: "frank", op: "submit" },
+      ],
+      ctx,
+    );
+    assert.equal(attempts.length, 2, "one attempt per step, in input order");
+    assert.equal(attempts[0]?.stepId, "f1");
+    assert.equal(attempts[1]?.stepId, "f2");
+    assert.equal(adapter.openContextCount(), 1, "one context per actor — no orphaned second context");
+  } finally {
+    await adapter.teardown();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("the bundled fixture apps ship their own observer declarations, matching the presets", async () => {
   const cases = [
     { app: "booking-app", preset: BOOKING_OBSERVERS },

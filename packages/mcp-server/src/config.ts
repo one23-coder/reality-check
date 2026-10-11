@@ -9,7 +9,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { parseJsonStrict } from "@rc/protocol";
+import { checkToolsConfig, parseJsonStrict } from "@rc/protocol";
 
 export interface McpServerOptions {
   /** Where run directories are created (resolved against cwd). */
@@ -33,8 +33,10 @@ export interface McpConfig {
 const CONFIG_FILENAME = ".reality-check.json";
 
 /** Read `.reality-check.json` at cwd if present; tolerate absence (opts-only
- * operation, e.g. rc_check, still works). Invalid JSON/BOM is a hard error —
- * parity with the CLI's exit-64 path. */
+ * operation, e.g. rc_check, still works). Invalid JSON/BOM, a wrong tools
+ * version or an unknown adapter.module are hard errors — parity with the CLI's
+ * exit-64 path (the file's absence is tolerated only here, because the MCP
+ * server can be driven by constructor opts alone). */
 function readCwdConfigFile(cwd: string): Partial<McpServerOptions> {
   const file = path.join(cwd, CONFIG_FILENAME);
   let text: string;
@@ -52,6 +54,11 @@ function readCwdConfigFile(cwd: string): Partial<McpServerOptions> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`${CONFIG_FILENAME} is not a JSON object`);
   }
+  // 版本与适配器白名单的判定与 CLI 共用同一份实现（@rc/protocol/tools-config）。
+  // 此前这里整段忽略 `tools`/`adapter.module`：同一份配置 CLI 判 exit 64、
+  // MCP 照跑不误，与「三入口一致」直接矛盾。
+  const problems = checkToolsConfig(value, file, { requireTools: true });
+  if (problems.length > 0) throw new Error(problems.join("; "));
   const raw = value as {
     app?: { entry?: unknown; faultEnv?: unknown };
     runsDir?: unknown;

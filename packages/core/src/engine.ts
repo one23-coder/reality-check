@@ -50,6 +50,20 @@ function normalizeSql(sql: string): string {
   return sql.replace(/\s+/g, " ").trim();
 }
 
+/** Does a concurrent group's result match its input? Returns a named reason or
+ * null. The adapter interface promises "one Attempt per step, in input order";
+ * a kernel that trusts that promise cannot notice a step going missing. */
+function barrierShapeProblem(group: readonly Step[], batch: readonly Attempt[]): string | null {
+  if (batch.length !== group.length)
+    return `adapter returned ${batch.length} attempts for ${group.length} concurrent steps`;
+  for (let i = 0; i < group.length; i++) {
+    const want = group[i]?.id;
+    const got = batch[i]?.stepId;
+    if (want !== got) return `adapter returned attempt for "${String(got)}" where step "${String(want)}" was expected (order is part of the contract)`;
+  }
+  return null;
+}
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
@@ -115,6 +129,15 @@ export async function executeScenario(
       throw configError(
         `step "${step.id}" declares both barrier and retry; a concurrent group cannot be retried step-by-step`,
       );
+  // 重试 = **重放整个步骤**。对写入动作（submit）来说，只有在"这次尝试什么都没派发
+  // 出去"时重放才是安全的：如果提交已经发出、只是读不回结果，再点一次就是**第二笔
+  // 业务写入**——而那正是"允许重复提交"的应用（也就是本工具要抓的对象）最容易被
+  // 推过断言线的地方。适配器用 `detail.dispatched` 报告这个事实（见 submit 的实现），
+  // 内核据此拒绝重放已派发的写入，并在时间线里说明为什么没重试。
+  //
+  // 注意这里**不能**直接禁止 submit + retry：retry 是第三轮为 Chromium 偶发断开
+  // 刻意加的缓解（`scenarios/*-cancel-waitlist.json`），一律禁止会把真实抖动重新变成
+  // blocked。判据必须是"有没有派发"，不是"是不是 submit"。
   for (const a of scenario.assertions)
     if (!manifest.supportedAssertions.includes(a.op))
       throw configError(`adapter does not support assertion op "${a.op}" (assertion ${a.id})`);
@@ -341,13 +364,34 @@ export async function executeScenario(
         }
         attempt.durationMs = Date.now() - started;
         if (k > 1) attempt.attemptIndex = k;
-        const willRetry = k < maxAttempts && retryOn.has(attempt.outcome);
+        const detail = attempt.detail as { dispatched?: unknown } | undefined;
+        const alreadyDispatched = detail?.dispatched === true;
+        const willRetry = k < maxAttempts && retryOn.has(attempt.outcome) && !alreadyDispatched;
+        if (k < maxAttempts && retryOn.has(attempt.outcome) && alreadyDispatched) {
+          // 不重试，但必须**说出来**：一次没有重试的重试声明，和一个没执行的重试
+          // 一样，都是报告里说不清的东西。
+          await artifacts.event("step-retry-refused", {
+            stepId: step.id,
+            attemptIndex: k,
+            outcome: attempt.outcome,
+            reason: "the attempt had already been dispatched; replaying it would produce a second business write",
+          });
+        }
         if (!willRetry) return attempt;
+        // 被丢弃的这次尝试也已经把截图/DOM 落到磁盘上了。不登记就会变成
+        // "孤儿文件"（磁盘上有、证据索引里没有），"每次尝试都留在记录里"也就不成立。
+        const discardedRefs = await verifyEvidence(attempt.evidence ?? [], {
+          stepId: step.id,
+          actor: step.actor,
+          stage: "retry",
+        });
+        evidence.push(...discardedRefs);
         await artifacts.event("step-retry", {
           stepId: step.id,
           attemptIndex: k,
           outcome: attempt.outcome,
           durationMs: attempt.durationMs,
+          evidence: discardedRefs.length,
           reason: String((attempt.detail as { error?: unknown } | undefined)?.error ?? attempt.outcome),
         });
       }
@@ -372,6 +416,20 @@ export async function executeScenario(
           observerId: condition.observer,
           stage: "when",
         });
+        // 与正式观察路径同一口径：证据核验不了 ⇒ 判定不可信。条件路径曾把这条
+        // 漏掉——于是证据文件被破坏时条件仍可能判 held 并执行后面那一步（一次
+        // 本不该发生的业务动作）。规则 22：无法判定 ⇒ blocked，不替用户选分支。
+        if (validRefs.length !== reading.evidence.length) {
+          await artifacts.event("blocked", {
+            stage: "when",
+            stepId: step.id,
+            observerId: condition.observer,
+            error:
+              `cannot decide the condition of step "${step.id}": evidence for "${condition.observer}" ` +
+              `failed verification (${reading.evidence.length - validRefs.length} of ${reading.evidence.length} refs rejected)`,
+          });
+          return blockedResult("the evidence behind a conditional step failed verification");
+        }
         evidence.push(...validRefs);
         const assertion: Assertion = {
           id: `when:${step.id}`,
@@ -432,9 +490,19 @@ export async function executeScenario(
         try {
           const batch = await adapter.runBarrier(group, ctx);
           const elapsed = Date.now() - started;
+          // 接口契约要求"每个步骤一个 Attempt，按输入顺序"。少了谁就说明那个步骤
+          // **没被观察到是否执行**：它的业务动作可能凭空消失，而后续断言会在
+          // "这一步没发生"的状态上求值——正是假通过。自带适配器不会这样，但内核
+          // 不能把这条契约当作前提（一致性问题在 conformance 里查的是适配器，
+          // 内核自己也得有这道闸门）。
+          const shape = barrierShapeProblem(group, batch);
           for (const attempt of batch) {
             attempt.durationMs = attempt.durationMs ?? elapsed;
             await recordAttempt(attempt);
+          }
+          if (shape !== null) {
+            await artifacts.event("blocked", { stage: "barrier", steps: group.map((s) => s.id), error: shape });
+            return blockedResult("a concurrent group returned an unusable set of attempts");
           }
         } catch (e) {
           const elapsed = Date.now() - started;

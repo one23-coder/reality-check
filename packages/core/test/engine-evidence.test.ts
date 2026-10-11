@@ -149,6 +149,10 @@ class FakeAdapter implements LocalWebAdapterV1 {
     return summary;
   }
   async registerAccounts(): Promise<void> {}
+  /** How many times the kernel asked this adapter to execute that step. */
+  stepCalls(stepId: string): number {
+    return this.stepAttempts.get(stepId) ?? 0;
+  }
   async runStep(step: Scenario["steps"][number], ctx: StepContext): Promise<Attempt> {
     const attempt: Attempt = {
       stepId: step.id,
@@ -165,6 +169,16 @@ class FakeAdapter implements LocalWebAdapterV1 {
         op: step.op,
         outcome: "error",
         detail: { error: "fake adapter: transient failure (first attempt)" },
+      };
+    }
+    if (this.behaviour.has("step-error-dispatched-once") && seen === 1) {
+      // 写操作已经发出去，只是结果读不回来 —— 适配器据实上报 `dispatched`。
+      return {
+        stepId: step.id,
+        actor: step.actor,
+        op: step.op,
+        outcome: "error",
+        detail: { error: "fake adapter: navigation happened, banner unreadable", dispatched: true },
       };
     }
     if (this.behaviour.has("step-error")) {
@@ -186,8 +200,11 @@ class FakeAdapter implements LocalWebAdapterV1 {
     return attempt;
   }
   async runBarrier(steps: Scenario["steps"], ctx: StepContext): Promise<Attempt[]> {
+    // "barrier-drop-last": 少返回一个 Attempt —— 违反适配器契约，用来证明内核
+    // 不会默默接受一个"步骤凭空消失"的并发组（那会让断言在没发生的状态上求值）。
+    const asked = this.behaviour.has("barrier-drop-last") ? steps.slice(0, -1) : steps;
     const out: Attempt[] = [];
-    for (const s of steps) out.push(await this.runStep(s, ctx));
+    for (const s of asked) out.push(await this.runStep(s, ctx));
     return out;
   }
   async observe(_observerId: string): Promise<ObserverReading> {
@@ -445,6 +462,24 @@ describe("条件步骤 when (场景 1.1, 方案 §3.3 规则 22)", () => {
     assert.match(String(blocked?.detail["error"]), /inconclusive/);
   });
 
+  it("blocks when the evidence behind a condition fails verification (条件与断言同一把尺)", async () => {
+    const runsRoot = await makeRunsRoot();
+    // 行数据本身满足条件（2 >= 2），但证据引用指向一个不存在的文件。
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], [ghostRef()]));
+    const result = await executeScenario(
+      scenario(guarded({ observer: "booking-count", op: "gte", value: 2 })),
+      adapter,
+      { runsRoot },
+    );
+    // 正式观察路径早就是这么做的（证据核验失败 ⇒ 降级）；条件路径曾漏掉这一条，
+    // 于是证据文件坏掉时条件仍可能判 held 并**执行一步本不该发生的业务动作**。
+    assert.equal(result.verdict, "blocked");
+    assert.equal(result.attempts.length, 0, "no step may run on unverified evidence");
+    const blocked = result.timeline.find((e) => e.kind === "blocked");
+    assert.equal(blocked?.detail["stage"], "when");
+    assert.match(String(blocked?.detail["error"]), /failed verification/);
+  });
+
   it("refuses a conditional barrier step before creating a run dir", async () => {
     const runsRoot = await makeRunsRoot();
     const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []));
@@ -523,6 +558,72 @@ describe("有界重试与可观测性 (方案 §12)", () => {
     // The live hook sees the SAME ordered events that end up in the timeline.
     assert.deepEqual(streamed, result.timeline.map((e) => e.kind));
     assert.ok(streamed.includes("step"));
+  });
+
+  it("refuses a concurrent group that returns fewer attempts than steps (a step must not vanish)", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, [
+      "barrier-drop-last",
+    ]);
+    const result = await executeScenario(
+      scenario({
+        steps: [
+          { id: "b1", actor: "alice", op: "submit", barrier: true },
+          { id: "b2", actor: "alice", op: "submit", barrier: true },
+        ],
+      }),
+      adapter,
+      { runsRoot },
+    );
+    // 少了 b2 的 Attempt：如果内核照旧去观察、去做断言，那就是在"b2 没发生"的状态
+    // 上求值 —— 假通过。契约违反 ⇒ blocked，并点名这一步。
+    assert.equal(result.verdict, "blocked");
+    const blocked = result.timeline.find((e) => e.kind === "blocked");
+    assert.equal(blocked?.detail["stage"], "barrier");
+    assert.match(String(blocked?.detail["error"]), /1 attempts for 2 concurrent steps/);
+  });
+
+  it("refuses to REPLAY a write that was already dispatched, and says why", async () => {
+    const runsRoot = await makeRunsRoot();
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, [
+      "step-error-dispatched-once",
+    ]);
+    const result = await executeScenario(
+      scenario({
+        steps: [{ id: "s1", actor: "alice", op: "submit", retry: { attempts: 3 } }],
+      }),
+      adapter,
+      { runsRoot },
+    );
+    // 第一次尝试已经派发出去（`detail.dispatched: true`），重放就是再写一笔 ——
+    // 宁可 blocked，也不制造场景里没有的第二笔业务写入。
+    assert.equal(result.verdict, "blocked");
+    assert.equal(result.attempts[0]?.attemptIndex, undefined, "must not have been retried");
+    assert.equal(adapter.stepCalls("s1"), 1, "the write must be dispatched exactly once");
+    const refused = result.timeline.filter((e) => e.kind === "step-retry-refused");
+    assert.equal(refused.length, 1);
+    assert.match(String(refused[0]?.detail["reason"]), /second business write/);
+    assert.equal(result.timeline.filter((e) => e.kind === "step-retry").length, 0);
+  });
+
+  it("still retries a submit when nothing was dispatched (the flake mitigation stays intact)", async () => {
+    const runsRoot = await makeRunsRoot();
+    // 与上一条完全相同的失败次数，但这次适配器报告"还没派发"（`dispatched` 缺席
+    // 或为 false）——这正是第三轮为 Chromium 偶发断开加的重试所要覆盖的情形。
+    // 判据必须落在"有没有派发"上，而不是"是不是 submit"上，否则会把真实抖动
+    // 重新变成 blocked。
+    const adapter = new FakeAdapter(async () => rowsReading([{ n: 2 }], []), false, OBSERVERS, [
+      "step-error-once",
+    ]);
+    const result = await executeScenario(
+      scenario({ steps: [{ id: "s1", actor: "alice", op: "submit", retry: { attempts: 2 } }] }),
+      adapter,
+      { runsRoot },
+    );
+    assert.equal(result.verdict, "passed");
+    assert.equal(result.attempts[0]?.attemptIndex, 2);
+    assert.equal(result.timeline.filter((e) => e.kind === "step-retry").length, 1);
+    assert.equal(result.timeline.filter((e) => e.kind === "step-retry-refused").length, 0);
   });
 
   it("refuses barrier + retry on the same step (no meaningful concurrent retry)", async () => {
