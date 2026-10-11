@@ -1,0 +1,7 @@
+{
+  "tools": "0.1.0",
+  "app": { "kind": "local-web", "entry": "fixtures/charging-app/server.js" },
+  "adapter": { "module": "@rc/adapter-local-web" },
+  "runsDir": "runs-charging",
+  "scenariosDir": "scenarios"
+}

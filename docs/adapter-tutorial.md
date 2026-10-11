@@ -222,6 +222,15 @@ node packages/cli/dist/src/main.js run   scenarios/yours.json --verbose
 }
 ```
 
+**完整的可运行例子**：`fixtures/charging-app`（充电桩预约）就是按这一节接入的第三个应用——不同域、不同表、不同观察器命名，`reality-check.observers.json` 放在应用入口旁，两个场景（正例 + 满位反例）随 `npm run verify` 一起跑。它与本仓库自带的两个参考应用没有任何共享的表或口径：
+
+```text
+fixtures/charging-app/server.js                      ← 被测应用（零依赖）
+fixtures/charging-app/reality-check.observers.json   ← 它自己的口径
+scenarios/charging-normal.json                       ← 正例（含 eqStr 归属断言）
+scenarios/charging-overbook.json                     ← 反例（满位后不得超发）
+```
+
 三种提供方式（优先级从高到低）：
 
 | 方式 | 用法 |

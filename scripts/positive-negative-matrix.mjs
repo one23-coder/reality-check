@@ -102,6 +102,29 @@ const CASES = [
     1,
     ["violated waitlist-declared-order"],
   ],
+  // ---- charging-app（第三个应用）：口径来自应用自己的观测器声明，矩阵要证明它
+  // 既能跑通、也能抓住错误实现（否则"接入成功"没有意义）。
+  ["check charging-normal", ["check", "scenarios/charging-normal.json", "--config", ".reality-check.charging.json"], 0],
+  ["check charging-overbook", ["check", "scenarios/charging-overbook.json", "--config", ".reality-check.charging.json"], 0],
+  ["charging-normal (correct)", ["run", "scenarios/charging-normal.json", "--config", ".reality-check.charging.json"], 0],
+  [
+    "charging-overbook (correct: alice queued)",
+    ["run", "scenarios/charging-overbook.json", "--config", ".reality-check.charging.json"],
+    0,
+  ],
+  [
+    "charging-overbook + overbooking",
+    [
+      "run",
+      "scenarios/charging-overbook.json",
+      "--config",
+      ".reality-check.charging.json",
+      "--fault",
+      "overbooking",
+    ],
+    1,
+    ["violated ports-not-exceeded"],
+  ],
 ];
 
 const failures = [];

@@ -1,0 +1,48 @@
+{
+  "protocol": { "scenario": "1.1" },
+  "id": "charging-normal",
+  "name": "充电桩正常预约（第三个应用）",
+  "description": "第三个被测应用「充电桩预约」：它有自己的表（stations/reservations/queue）与自己的观察器命名（ports-free / reservation-count / holder-account），与 booking-app / exam-seat-app 完全不同。holder 以 seedRole:\"holder\" 声明占用 1 个桩口，alice 随后预约成功；reservations 恰好 2 条、空闲桩口不为负、且新增的那笔确实属于 alice。正确实现退出码 0。这条场景证明「接入新应用 = 写配置」，不需要改适配器源码。",
+  "app": "charging-app",
+  "seed": 7,
+  "roles": [
+    { "id": "alice", "account": { "username": "alice_rc", "password": "pw-alice" }, "seedRole": "none" },
+    { "id": "holder", "account": { "username": "seed1_rc", "password": "pw-seed1" }, "seedRole": "holder" }
+  ],
+  "steps": [
+    { "id": "alice-register", "actor": "alice", "op": "register", "params": { "username": "alice_rc", "password": "pw-alice" } },
+    { "id": "alice-login", "actor": "alice", "op": "login", "params": { "username": "alice_rc", "password": "pw-alice" } },
+    { "id": "alice-nav-reserve", "actor": "alice", "op": "navigate", "params": { "path": "/reserve?station=st-1" } },
+    { "id": "alice-submit-reserve", "actor": "alice", "op": "submit" }
+  ],
+  "observers": [
+    {
+      "id": "reservation-count",
+      "sql": "SELECT COUNT(*) AS n FROM reservations",
+      "tables": ["reservations"],
+      "expectColumns": ["n"]
+    },
+    {
+      "id": "ports-free",
+      "sql": "SELECT ports - (SELECT COUNT(*) FROM reservations WHERE reservations.station_id = stations.id) AS free FROM stations WHERE id = 'st-1'",
+      "tables": ["stations", "reservations"],
+      "expectColumns": ["free"]
+    },
+    {
+      "id": "holder-account",
+      "sql": "SELECT account FROM reservations WHERE station_id = 'st-1' AND account NOT IN ('seed1_rc') ORDER BY id ASC LIMIT 1",
+      "tables": ["reservations"],
+      "expectColumns": ["account"]
+    }
+  ],
+  "assertions": [
+    { "id": "alice-reservation-recorded", "rule": "reservation-recorded", "observer": "reservation-count", "op": "eq", "value": 2 },
+    { "id": "ports-non-negative", "rule": "ports-not-exceeded", "observer": "ports-free", "op": "gte", "value": 0 },
+    { "id": "reservation-belongs-to-alice", "rule": "reservation-owned-by-requester", "observer": "holder-account", "op": "eqStr", "expected": "alice_rc" }
+  ],
+  "rules": [
+    { "id": "reservation-recorded", "description": "预约落库：reservations 恰好 2 条（holder 先行占用 + alice 本次预约）" },
+    { "id": "ports-not-exceeded", "description": "桩口守恒：ports-free >= 0，预约后空闲归 0 但不为负" },
+    { "id": "reservation-owned-by-requester", "description": "归属正确：新增的那笔预约属于发起人 alice_rc（不是别人）" }
+  ]
+}

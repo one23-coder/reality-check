@@ -18,7 +18,8 @@ packages/
 fixtures/
   booking-app       参考应用：课程报名（正确版 + 三个故障开关）
   exam-seat-app     第二独立应用：考试座位预约（不同域模型）
-scenarios/          三个基准场景 JSON
+  charging-app      第三独立应用：充电桩预约（不同域/表/口径，演示"只写配置即可接入"）
+scenarios/          基准场景 JSON（booking / exam / charging）
 scripts/            阶段验收脚本（稳定性、blocked 用例）
 ```
 

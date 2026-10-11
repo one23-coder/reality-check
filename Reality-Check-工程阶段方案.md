@@ -317,7 +317,7 @@ CLI（已有）／工作台／MCP／CI
 
 | # | 判据（可检验） | 现状 | 证据 / 缺口 |
 | --- | --- | --- | --- |
-| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = **195/195**；**`npm run accept` 一键 7/7 一次性跑通**（2026-10-11 九轮，见 A.12/A.14/A.15） |
+| 1 | 全仓绿色门禁：typecheck + build + 单测全过（含真实 Chromium 端到端） | ✅ | `npm run verify` = **201/201**；**`npm run accept` 一键 7/7 一次性跑通**（2026-10-11，见 A.12/A.14/A.15/A.16）；正反例矩阵 26 用例 0 偏差 |
 | 2 | 正反例配对：正确实现不误报、每个故障开关被归因到**对应**规则 | ✅ | `node scripts/positive-negative-matrix.mjs` 19/19，0 偏差 |
 | 3 | 诊断能力用**预先标注**案例集评估，公开范围与误报样本 | ✅ | `fixtures/diagnostic-cases.json`（12 例，跑前冻结）+ `scripts/diagnostic-benchmark.mjs`：12/12，漏报 0、误报 0 |
 | 4 | 三入口（CLI / 工作台 / MCP）结果语义逐字段一致 | ✅ | `scripts/tri-entry-consistency.mjs`：三份 `result.json` 无差异 |
@@ -329,12 +329,13 @@ CLI（已有）／工作台／MCP／CI
 | 10 | 数据隔离：只清理台账内资源；无标记数据根拒绝运行 | ✅ | 内核启动前 `claimDataRoot` + 台账兜底清理（A.7）；适配器拒绝非本次运行的 db |
 | 11 | Linux 行为与 Windows 一致 | ◐ | WSL2 记录在 A.2；本轮新增的步骤证据/台账未在 Linux 复跑 |
 | 12 | CI 在托管 Runner 上真正跑绿（含三入口与矩阵） | ◐ | 工作流已覆盖 `npm run accept` 的全部门禁（build+test、三入口、矩阵、基准、闭环、blocked、串行）并支持 `workflow_dispatch` 手动触发；**仍缺 GitHub Runner 的运行号**（本机 7/7 不能代替 CI 7/7） |
-| 13 | ≥3 个**真实外部项目**试用，记录耗时/发现/误报/复用 | ⬜ | 仓库内只有 2 个自带 fixture；需要外部输入，无法自证 |
+| 13 | ≥3 个**真实外部项目**试用，记录耗时/发现/误报/复用 | ⬜ | 仓库内只有 2 个自带 fixture；需要外部输入，无法自证。**补记（九轮后）**：第三个**自带**应用（`fixtures/charging-app`，不同域/表/观察器命名）已实测「只写配置即可接入」并配正反例（A.16）——它验证的是**接入路径不要求改适配器源码**，**不能**替代外部团队的真实接入，本行仍为 ⬜ |
 | 14 | macOS 支持经实际验证后入矩阵 | ⬜ | 需要 macOS 机器 |
 | 15 | 受控事件注入（邮件/回调）、虚拟时间、安装/升级/迁移/排障文档 | ⬜ | 阶段 4 未开工的明确范围 |
 | 20 | 证据包脱敏导出：账号/密钥/内部路径不得残留，导出后独立反扫 | ✅ | `export --run-id <id> --pack <dir>`（规则 23）；单测 14 项 + 真实运行导出实测：12 文件、74 处替换、4 个二进制排除、leak scan clean，包内反扫零残留（A.11） |
 | 21 | 观察器口径随应用走 + 只读是语句性质 + 入口标识符先验形状 + 呈现失败不顶掉结论 | ✅ | 规则 28–31；`fixtures/<app>/reality-check.observers.json` × 2（测试钉住与预设一致）；`npm run verify` 187/187（A.14） |
 | 22 | 内核并发段：重放已派发的写、并发组结果不校验、条件证据不核验、建页竞态、争抢未真正同刻 | ✅ | 规则 32–35；`npm run verify` 195/195、`accept` 7/7；真实争抢运行 `fireOffsetMs=2ms`（A.15） |
+| 23 | 第三个应用只写配置即可接入（不同域/表/口径），且错误实现能被新口径抓住 | ✅ | `fixtures/charging-app` + 2 场景 + `.reality-check.charging.json`；实测 0/0/1/64 四个退出码；`packages/cli/test/adoption.test.ts` 6 项随 verify 跑（A.16） |
 | 16 | 面向使用者的文档：场景编写指南、协议字段速查、适配器开发教程 | ✅ | `docs/scenario-guide.md`、`docs/protocol-reference.md`、`docs/adapter-tutorial.md`（README 有索引） |
 | 17 | 报错具象化：blocked/inconclusive 直接说明原因与建议、给出产物路径 | ✅ | protocol `explainResult()` 单点措辞，CLI 与 MCP 共用；cli 测试断言 blocked 输出含阶段/原因/建议/路径 |
 | 18 | 运行时可观测性：实时步骤流 + 每步耗时 + 最慢步骤 | ✅ | 内核 `Attempt.durationMs` + `onEvent` 流；`run/rerun --verbose` 实测边跑边打印并给出 slowest |
@@ -623,3 +624,28 @@ CLI（已有）／工作台／MCP／CI
 **实测**：`npm run verify` **195/195**（新增 8 项）；`npm run accept` **7/7**（verify 64.0s / matrix 153.4s / benchmark 140.0s / tri-entry 17.6s / agent-loop 17.6s / blocked 19.2s / serial 71.4s 10/10）；真实争抢运行取证（`booking-contend`，run `rc-mv3mktmk-6fa843c1`，verdict passed）：两笔提交的 `detail.fireOffsetMs` 均为 **2ms**、`dispatched: true`，即**争抢确实发生在同一刻**——这条以前只能靠注释声称，现在有数字。
 
 **诚实边界**：F5（争抢偏移）只能被压小、无法被证明；F4 的竞态无法按需复现，测试直接驱动不变量（**未能实测**触发路径）；`sql-dump` 的一致性改进是防御性，未构造出真实的跨表矛盾快照。
+
+### A.16 2026-10-11 九轮补记：第三个应用「只写配置」接入演练
+
+**动机**：§12 判据 13（≥3 个真实外部项目）需要外部输入、无法自证，但它的一半是**可自证的**——「接入新应用到底要不要改适配器源码」。规则 25/29 之后，这个问题第一次可以拿一个**不同域的应用**来回答。
+
+| 交付物 | 内容 |
+| --- | --- |
+| `fixtures/charging-app/server.js` | 第三个被测应用：充电桩预约。`stations` / `reservations` / `queue` / `accounts`，与 booking（课程报名）、exam（座位预约）**不同域、不同表、不同端点名**，零 npm 依赖 |
+| `fixtures/charging-app/reality-check.observers.json` | 它自己的口径：`ports-free` / `reservation-count` / `queue-head` / `queue-order` / `holder-account`（列名 `station_id`，不是 `course_id`/`exam_id`） |
+| `scenarios/charging-normal.json` | 正例：holder 占 1 个桩口、alice 预约成功；三条断言含 **`eqStr`**（新落的那笔确实属于 `alice_rc`） |
+| `scenarios/charging-overbook.json` | 反例：两个 holder 占满桩口，alice 再预约——正确实现进队列（reservations 仍 2），错误实现超发（3 / ports-free=-1） |
+| `packages/cli/test/adoption.test.ts` | 端到端回归 6 项（真实 Chromium），随 `npm run verify` 跑 |
+
+**与第二轮（exam-seat-app）接入的关键差别**——上次记录的两处阻碍这次都不存在：
+
+1. 上次：适配器清单里的 `waitlist-*` SQL 硬编码 `course_id`，exam 库的列是 `exam_id`，于是 **exams 的队列观察器根本不可用**，只能用数值旁证。这次：口径由应用声明（规则 25），charging-app 直接写自己的 `queue-head`/`queue-order`，`check` 一遍过。
+2. 上次：协议没有字符串断言，「队首账号 = 声明账号」表达不出来。这次：`eqStr` 直接在正例里断言归属。
+
+**实测（cwd = 仓库根，`--config .reality-check.charging.json`）**：`check` 0/0（4 ops / 3 observers / 3 assertions；4 ops / 2 observers / 2 assertions）；`run charging-normal` **0**（`rc-mv3n6u51-1d276d9b`）；`run charging-overbook` **0**（`rc-mv3n6zo8-aeb07400`）；`run charging-overbook --fault overbooking` **1**（`rc-mv3n756v-ca18ab66`，✗ reservation-recorded、✗ ports-not-exceeded）；**去掉观察器声明**（入口存在、旁边无配置文件）**64**（`no observers declared for app …`，规则 29——不会静默回退到自带预设）。
+
+**门禁**：`npm run verify` **201/201**（新增 6 项接入演练）；`npm run accept` **7/7**（verify 58.1s / matrix 207.9s / benchmark 163.7s / tri-entry 18.4s / agent-loop 17.1s / blocked 19.1s / serial 84.2s 10/10）；正反例矩阵 **21 → 26 用例、0 偏差**（新增 charging 的 2 条 check + 3 条 run，含故障归因）。
+
+第三个应用同时进入正反例矩阵（`scripts/positive-negative-matrix.mjs` 新增 5 条）：**26 用例、0 偏差**（正确实现全部通过、故障实现全部归因到规则 id）。`npm run verify` **201/201**（新增 `packages/cli/test/adoption.test.ts` 6 项）；`npm run accept` **7/7**（verify 58.1s / matrix 207.9s / benchmark 163.7s / tri-entry 18.4s / agent-loop 17.1s / blocked 19.1s / serial 84.2s 10/10）。
+
+**诚实边界**：这是**同一作者、同一仓库内**的第三个应用，不是外部团队；它证明「接入路径不要求改适配器源码」（可自动验证），**不能**替代外部接入（判据 13 仍为 ⬜）。应用的错误实现是刻意造的（`RC_FAULT=overbooking`），正反例配对才有意义。

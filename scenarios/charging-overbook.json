@@ -1,0 +1,41 @@
+{
+  "protocol": { "scenario": "1.1" },
+  "id": "charging-overbook",
+  "name": "充电桩满位后再预约（第三个应用的反例）",
+  "description": "两个 holder 用 seedRole:\"holder\" 占满 2 个桩口，alice 再去预约：正确实现把 alice 排进队列（reservations 仍是 2、空闲为 0），错误实现（RC_FAULT=overbooking）会超发 1 个桩口 ⇒ reservations=3、ports-free=-1，桩口守恒被证伪、退出码 1。这条与 charging-normal 组成正反例配对：既能跑通，也能抓住同一应用里的错误实现。",
+  "app": "charging-app",
+  "seed": 7,
+  "roles": [
+    { "id": "alice", "account": { "username": "alice_rc", "password": "pw-alice" }, "seedRole": "none" },
+    { "id": "h1", "account": { "username": "seed1_rc", "password": "pw-seed1" }, "seedRole": "holder" },
+    { "id": "h2", "account": { "username": "seed2_rc", "password": "pw-seed2" }, "seedRole": "holder" }
+  ],
+  "steps": [
+    { "id": "alice-register", "actor": "alice", "op": "register", "params": { "username": "alice_rc", "password": "pw-alice" } },
+    { "id": "alice-login", "actor": "alice", "op": "login", "params": { "username": "alice_rc", "password": "pw-alice" } },
+    { "id": "alice-nav-reserve", "actor": "alice", "op": "navigate", "params": { "path": "/reserve?station=st-1" } },
+    { "id": "alice-submit-reserve", "actor": "alice", "op": "submit" }
+  ],
+  "observers": [
+    {
+      "id": "reservation-count",
+      "sql": "SELECT COUNT(*) AS n FROM reservations",
+      "tables": ["reservations"],
+      "expectColumns": ["n"]
+    },
+    {
+      "id": "ports-free",
+      "sql": "SELECT ports - (SELECT COUNT(*) FROM reservations WHERE reservations.station_id = stations.id) AS free FROM stations WHERE id = 'st-1'",
+      "tables": ["stations", "reservations"],
+      "expectColumns": ["free"]
+    }
+  ],
+  "assertions": [
+    { "id": "nobody-extra-recorded", "rule": "reservation-recorded", "observer": "reservation-count", "op": "eq", "value": 2 },
+    { "id": "ports-non-negative", "rule": "ports-not-exceeded", "observer": "ports-free", "op": "gte", "value": 0 }
+  ],
+  "rules": [
+    { "id": "reservation-recorded", "description": "桩口满位时不得再落一笔预约：reservations 恰好 2 条（两个 holder）" },
+    { "id": "ports-not-exceeded", "description": "桩口守恒：ports-free >= 0，满位后不得为负" }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "observedTables": ["stations", "reservations", "queue", "accounts"],
+  "observers": {
+    "ports-free": {
+      "sql": "SELECT ports - (SELECT COUNT(*) FROM reservations WHERE reservations.station_id = stations.id) AS free FROM stations WHERE id = 'st-1'",
+      "tables": ["stations", "reservations"],
+      "columns": ["free"]
+    },
+    "reservation-count": {
+      "sql": "SELECT COUNT(*) AS n FROM reservations",
+      "tables": ["reservations"],
+      "columns": ["n"]
+    },
+    "queue-head": {
+      "sql": "SELECT account FROM queue WHERE station_id = 'st-1' ORDER BY position ASC LIMIT 1",
+      "tables": ["queue"],
+      "columns": ["account"]
+    },
+    "queue-order": {
+      "sql": "SELECT account FROM queue WHERE station_id = 'st-1' ORDER BY position ASC",
+      "tables": ["queue"],
+      "columns": ["account"]
+    },
+    "holder-account": {
+      "sql": "SELECT account FROM reservations WHERE station_id = 'st-1' AND account NOT IN ('seed1_rc') ORDER BY id ASC LIMIT 1",
+      "tables": ["reservations"],
+      "columns": ["account"]
+    }
+  }
+}
