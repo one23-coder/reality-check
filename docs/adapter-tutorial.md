@@ -191,7 +191,8 @@ node -e "import('@rc/adapter-sdk').then(async m => console.log(await m.runConfor
   "runsDir": "runs", "scenariosDir": "scenarios" }
 ```
 
-2. 第一个场景：照 [scenario-guide.md](./scenario-guide.md) §1 的最小示例写，观察器用你清单里已有的 id。
+2. **声明你自己应用的观察器**（见 §8.1 —— 这一步不能省，观察器属于应用）。
+3. 第一个场景：照 [scenario-guide.md](./scenario-guide.md) §1 的最小示例写，观察器用你清单里已有的 id。
 3. 跑：
 
 ```bash
@@ -199,13 +200,50 @@ node packages/cli/dist/src/main.js check scenarios/yours.json      # 结构 + �
 node packages/cli/dist/src/main.js run   scenarios/yours.json --verbose
 ```
 
+### 8.1 观察器：写在你的应用旁边，不要改适配器源码
+
+`adapter-local-web` 自带的 `booking-count` / `capacity-left` / `seats-left` 等是**两个参考应用的预设**（绑在 `course-1`、`exam-1` 这些主键上），不是通用能力。接入你自己的应用时，在**应用入口旁**放一个 `reality-check.observers.json`：
+
+```json
+{
+  "observedTables": ["orders", "stock"],
+  "observers": {
+    "orders-count": {
+      "sql": "SELECT COUNT(*) AS n FROM orders",
+      "tables": ["orders"],
+      "columns": ["n"]
+    },
+    "stock-left": {
+      "sql": "SELECT qty - (SELECT COUNT(*) FROM orders WHERE orders.sku = stock.sku) AS left FROM stock WHERE sku = 'SKU-1'",
+      "tables": ["stock", "orders"],
+      "columns": ["left"]
+    }
+  }
+}
+```
+
+三种提供方式（优先级从高到低）：
+
+| 方式 | 用法 |
+| --- | --- |
+| 应用目录旁的文件 | `<dirname(app.entry)>/reality-check.observers.json`（推荐；CLI/工作台/MCP 都会自动发现） |
+| 配置指定路径 | `.reality-check.json` 的 `"adapter": { "observers": "./ops/observers.json" }` |
+| 直接传对象 | `createLocalWebAdapter({ appPath, observers })`（供自写适配器/测试使用） |
+
+规则：
+
+- 每个观察器必须给 `sql` / `tables` / `columns`；`tables` 必须都在 `observedTables` 白名单内（SQL 层只读白名单，规则 1）。
+- 坏 JSON、缺 `columns`、表不在白名单 ⇒ **配置错误（exit 64）并具名原因**，不会静默回退到预设——回退会让同名表查出别的意思。
+- 场景里 observer 的 `sql` 仍必须与这份清单一致（规则 2「单一口径」）：只是清单现在来自你的应用配置，不再来自适配器源码。
+
 ## 9. 排查表
 
 | 症状 | 多半原因 |
 | --- | --- |
 | exit 64，`adapter does not support step op` | 场景用了清单没声明的 op |
 | exit 64，`SQL differs between scenario and adapter manifest` | 观察器 SQL 与清单不同源（单一口径） |
-| exit 64，`observer "x" is not declared by adapter` | 场景观察器 id 不在清单里 |
+| exit 64，`observer "x" is not declared by adapter` | 场景观察器 id 不在清单里（清单 = 你的 `reality-check.observers.json`，见 §8.1） |
+| exit 64，`observers file not found` / `invalid JSON` / `needs "columns"` / `not in observedTables` | 观察器配置路径不对、JSON 坏、缺字段或表不在白名单（§8.1） |
 | exit 3（blocked），`setupEnv failed` | 应用没起来：入口/依赖/端口/`/healthz` 不健康（`--verbose` 会直接给原因） |
 | exit 3，`步骤无法执行` | 选择器找不到、导航超时、浏览器断开——不是业务结论 |
 | exit 3，`claimDataRoot` | 数据根已有内容且无 `ownership.json` 标记（§10 拒绝在别人数据上跑） |

@@ -164,7 +164,9 @@ function vUnion(value: unknown, path: string): string | number | boolean {
 
 const whenV = vObject<StepCondition>({
   required: { observer: vString, op: vEnum<AssertOp>([...ASSERT_OPS]) },
-  optional: { value: vInt({ min: 0 }), expected: vString },
+  // 负值必须可表达：余额透支、库存缺口、配额为负都是合法业务量，把 min 设成 0
+  // 会逼用户绕道（例如只能用 gte 反向兜），等于让断言说不出业务真相。
+  optional: { value: vInt(), expected: vString },
 });
 
 const stepV = vObject<Step>({
@@ -202,8 +204,11 @@ const assertionV = vObject<Assertion>({
     op: vEnum<AssertOp>([...ASSERT_OPS]),
   },
   optional: {
-    /** Required for numeric ops (forbidden for eqStr): the comparison value. */
-    value: vInt({ min: 0 }),
+    /** Required for numeric ops (forbidden for eqStr): the comparison value.
+     * Negative values are legal — 余额透支 / 库存缺口 / 超订后 capacity-left = -1
+     * are exactly the quantities a check exists to catch. `min: 0` used to
+     * forbid them, forcing an indirect `gte 0` that says less. */
+    value: vInt(),
     /** Required for op "eqStr" (forbidden otherwise): the expected string. */
     expected: vString,
   },

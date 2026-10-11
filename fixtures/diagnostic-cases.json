@@ -1,6 +1,15 @@
 {
   "protocol": "diagnostic-cases/1.0",
-  "frozenAt": "2026-10-10",
+  "frozenAt": "2026-10-11",
+  "revisions": [
+    {
+      "at": "2026-10-11",
+      "changed": ["booking-cancel-waitlist-cancel-keeps-slot", "exam-cancel-waitlist-cancel-keeps-seat"],
+      "from": 2,
+      "to": 1,
+      "reason": "结果聚合规则修正（方案 §3.3 规则 24）：一条**已证实**的业务违规不再被另一个观察器的证据缺口压低成 inconclusive。这两个故障用例各有两条带完整证据的 violated 规则（booking: slot-refilled-by-promotion observed 1≠2、queue-drains-in-declared-order bob_rc≠carol_rc），旧规则却整体报 exit 2；缺口仍在其自身规则上具名（missingEvidenceTypes:[\"rows\"]）并留在报告里。标签因**语义变更**而重冻结，不是为了让测试变绿。"
+    }
+  ],
   "purpose": "诊断能力评估用的**预先标注**案例集（方案 §6 验收合格判定：不用自评代替，公开案例范围与误报样本）。标签来自 fixture 的既定语义（正确实现 / 各故障开关），在跑之前就冻结；脚本只负责比对，不参与判定。",
   "scope": [
     "两个自带参考应用：booking-app（course-1 容量 2）、exam-seat-app（exam-1 容量 2）",
@@ -56,7 +65,7 @@
       "app": "booking-app",
       "scenario": "scenarios/booking-cancel-waitlist.json",
       "fault": "cancel-keeps-slot",
-      "exitCode": 2,
+      "exitCode": 1,
       "violatedRules": ["cancel-releases-slot", "waitlist-declared-order"],
       "cleanRules": []
     },
@@ -121,7 +130,7 @@
       "app": "exam-seat-app",
       "scenario": "scenarios/exam-cancel-waitlist.json",
       "fault": "cancel-keeps-seat",
-      "exitCode": 2,
+      "exitCode": 1,
       "violatedRules": ["cancel-releases-seat", "waitlist-declared-order"],
       "cleanRules": []
     },

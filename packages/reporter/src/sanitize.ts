@@ -23,10 +23,27 @@ export const REDACTION_RULES: readonly RedactionRule[] = [
   { name: "account-token", pattern: /\b[A-Za-z0-9._-]+_rc\b/g, replacement: "<account>" },
   // Windows 绝对路径（含盘符）
   { name: "windows-path", pattern: /[A-Za-z]:\\[^"'\s,;)\]}]+/g, replacement: "<path>" },
-  // POSIX 常见绝对路径
+  // POSIX 常见绝对路径（CI 的默认工作目录也在内：GitLab 是 /builds，容器常挂
+  // /workspace；缺了它们，一个跑在 CI 上的证据包会把构建机路径原样带出去）
   {
     name: "posix-path",
-    pattern: /(?<=^|["'\s:(])\/(?:home|Users|tmp|var|opt|root|mnt|srv)\/[^"'\s,;)\]}]+/g,
+    pattern:
+      // `=` 也在边界里：路径最常见的形态就是 `key=/abs/path`。
+      /(?<=^|["'\s:(=])\/(?:home|Users|root|tmp|var|opt|srv|mnt|workspace|builds?|build|app|src|data|projects?|code|repo|Documents|Desktop|Library)\/[^"'\s,;)\]}]+/g,
+    replacement: "<path>",
+  },
+  // 绝对路径兜底：以文件结尾的绝对路径（堆栈里的源码路径、构建产物路径）。
+  // 只认带扩展名的路径，避免把 `/api/v1/bookings` 这类 URL 路径误伤成 <path>。
+  {
+    name: "posix-file-path",
+    pattern:
+      /(?<=^|["'\s:(=])\/(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.(?:json|jsonl|js|mjs|cjs|ts|tsx|sql|db|sqlite|png|jpg|jpeg|gif|html|log|txt|csv|yml|yaml|env|md)\b/g,
+    replacement: "<path>",
+  },
+  // Git Bash / MSYS 的盘符式路径（/d/xxx/...）
+  {
+    name: "gitbash-path",
+    pattern: /(?<=^|["'\s:(=])\/[a-zA-Z]\/(?:[^"'\s,;)\]}]+\/)+[^"'\s,;)\]}]+/g,
     replacement: "<path>",
   },
   // 本机回环地址 + 端口（端口随运行变化，不属于业务信息）
@@ -123,6 +140,21 @@ export function sanitizeJsonValue(
 
 /** 反向校验：脱敏后的文本里**不得**再出现任何原始敏感值。
  * 返回命中的敏感值（截断到 80 字符，便于报错但不回显全文）；空数组 = 干净。 */
+/** 规则自检: 脱敏后，任何模式规则都**不得**再命中。
+ *
+ * `findLeaks` 只认已知敏感值；这条补上另一半——规则本身（路径/密钥/账号模式）
+ * 在脱敏后的文本里仍有命中，说明脱敏没做干净（例如一条没被规则表覆盖的路径
+ * 形态）。宁可拒产，不可漏检。 */
+export function findRuleResidues(text: string): string[] {
+  const residues: string[] = [];
+  for (const rule of REDACTION_RULES) {
+    const match = fresh(rule.pattern).exec(text);
+    if (match !== null && match[0] !== undefined)
+      residues.push(`${rule.name}: ${match[0].slice(0, 60)}`);
+  }
+  return residues;
+}
+
 export function findLeaks(text: string, secrets: readonly string[]): string[] {
   const leaks: string[] = [];
   for (const secret of secrets) {

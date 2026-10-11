@@ -13,6 +13,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import {
   findLeaks,
+  findRuleResidues,
   sanitizeJsonValue,
   sanitizeText,
   type RedactionCount,
@@ -214,7 +215,8 @@ export async function buildEvidencePack(opts: PackOptions): Promise<PackResult> 
   for (const abs of await walkFiles(packDir)) {
     if (!isTextEvidence(abs) && !abs.endsWith(".jsonl")) continue;
     const content = await fsp.readFile(abs, "utf8");
-    for (const leak of findLeaks(content, secrets)) {
+    // 两道反扫：①已知敏感值不得残留；②模式规则不得再命中（覆盖规则表之外的形态）。
+    for (const leak of [...findLeaks(content, secrets), ...findRuleResidues(content)]) {
       leaks.push(`${path.relative(packDir, abs).split(path.sep).join("/")}: ${leak}`);
     }
   }

@@ -2,7 +2,13 @@
  * 并保证"已知敏感值优先"与"反扫能发现残留"两件关键性质。 */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { REDACTION_RULES, findLeaks, sanitizeJsonValue, sanitizeText } from "../src/sanitize.js";
+import {
+  REDACTION_RULES,
+  findLeaks,
+  findRuleResidues,
+  sanitizeJsonValue,
+  sanitizeText,
+} from "../src/sanitize.js";
 
 describe("sanitizeText", () => {
   it("replaces known secrets literally, longest first", () => {
@@ -82,6 +88,42 @@ describe("sanitizeJsonValue", () => {
     assert.doesNotMatch(json, /127\.0\.0\.1:1234/);
     assert.ok(redactions.some((r) => r.rule === "account-token"));
     assert.ok(redactions.every((r) => r.count > 0));
+  });
+});
+
+describe("path coverage (CI 与容器路径)", () => {
+  it("redacts CI/container absolute paths, not just the classic unix roots", () => {
+    const text = [
+      "cwd=/workspace/project",
+      "runner=/builds/group/repo",
+      "src=/app/src/server.js",
+      "bash=/d/code/myapp/run.sh",
+    ].join("\n");
+    const { text: out } = sanitizeText(text);
+    assert.doesNotMatch(out, /\/workspace\//);
+    assert.doesNotMatch(out, /\/builds\//);
+    assert.doesNotMatch(out, /\/app\/src\/server\.js/);
+    assert.doesNotMatch(out, /\/d\/code\//);
+  });
+
+  it("does not mistake URL paths for filesystem paths", () => {
+    const { text: out } = sanitizeText('GET /api/v1/bookings -> 200');
+    assert.match(out, /\/api\/v1\/bookings/);
+  });
+});
+
+describe("findRuleResidues", () => {
+  it("is clean after redaction and dirty before it", () => {
+    const dirty = "token sk-abcdefghijklmnop and /workspace/x/app.js and carol_rc";
+    assert.ok(findRuleResidues(dirty).length > 0, "raw text must trip the rules");
+    assert.deepEqual(findRuleResidues(sanitizeText(dirty).text), []);
+  });
+
+  it("flags a path shape the rule table's known roots do not cover", () => {
+    // 只有规则自检能抓到这类：knownSecrets 里没有它，反扫已知值会漏。
+    const leaky = "at /opt-odd/stack/app.ts:42";
+    assert.deepEqual(findLeaks(leaky, []), []);
+    assert.ok(findRuleResidues(leaky).length > 0);
   });
 });
 

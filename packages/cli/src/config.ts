@@ -112,7 +112,12 @@ export const ADAPTER_MODULES = ["@reality-check/adapter-local-web", "@rc/adapter
 export interface RcConfig {
   tools: typeof TOOLS_VERSION;
   app: { kind: "local-web"; entry: string; faultEnv?: string };
-  adapter: { module: string };
+  adapter: {
+    module: string;
+    /** Path to a `reality-check.observers.json` for THIS app. Omit to use the
+     * file that sits next to `app.entry` (or the bundled reference presets). */
+    observers?: string;
+  };
   runsDir: string;
   scenariosDir: string;
 }
@@ -126,6 +131,7 @@ const configV = vObject<RcConfig>({
     }),
     adapter: vObject<RcConfig["adapter"]>({
       required: { module: vString },
+      optional: { observers: vString },
     }),
     runsDir: vString,
     scenariosDir: vString,

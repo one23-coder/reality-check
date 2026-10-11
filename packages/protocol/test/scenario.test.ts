@@ -92,6 +92,18 @@ describe("scenario 1.1 conditional steps", () => {
     );
   });
 
+  it("accepts negative assertion values and conditions (余额透支/库存缺口是合法业务量)", () => {
+    const parsed = validateScenario(
+      doc({ assertions: [{ id: "a1", rule: "r1", observer: "count", op: "eq", value: -1 }] }),
+    );
+    assert.equal(parsed.assertions[0]?.value, -1);
+    // 条件同样允许负值
+    assert.equal(
+      validateScenario(conditional({ observer: "count", op: "lte", value: -1 })).steps[0]?.when?.value,
+      -1,
+    );
+  });
+
   it("still rejects an unsupported scenario version", () => {
     assert.throws(() => validateScenario(doc({ protocol: { scenario: "2.0" } })), VError);
   });

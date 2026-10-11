@@ -48,9 +48,11 @@ const CASES = [
     ["violated capacity-not-exceeded"],
   ],
   [
+    // 规则 24 之后是 1 而不是 2：两条违规都有完整证据（observed 1≠2 / bob_rc≠
+    // carol_rc），不该被同一轮里另一条读空的断言压低成 inconclusive。
     "booking-cancel-waitlist + cancel-keeps-slot",
     ["run", "scenarios/booking-cancel-waitlist.json", "--fault", "cancel-keeps-slot"],
-    2,
+    1,
     ["violated cancel-releases-slot", "violated waitlist-declared-order"],
   ],
   [
@@ -84,7 +86,7 @@ const CASES = [
       "--fault",
       "cancel-keeps-seat",
     ],
-    2,
+    1,
     ["violated cancel-releases-seat", "violated waitlist-declared-order"],
   ],
   [

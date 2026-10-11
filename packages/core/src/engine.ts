@@ -31,7 +31,7 @@ import {
   type Verdict,
 } from "@rc/protocol";
 import type { LocalWebAdapterV1, ObserverReading, StepContext } from "./adapter.js";
-import { evaluateAssertion, rollUpVerdict } from "./assert.js";
+import { evaluateAssertion, expectedText, rollUpVerdict } from "./assert.js";
 import { RunArtifacts } from "./artifacts.js";
 import { configError, internalError } from "./errors.js";
 import {
@@ -199,7 +199,7 @@ export async function executeScenario(
       assertionId: a.id,
       verdict: "not-evaluated" as const,
       observed: null,
-      expected: `${a.op} ${a.value}`,
+      expected: expectedText(a),
       evidenceRefs: [],
     })),
     timeline: [...artifacts.events()],

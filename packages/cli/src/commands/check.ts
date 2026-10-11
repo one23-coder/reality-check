@@ -11,7 +11,7 @@ import {
   type AdapterManifest,
   type Scenario,
 } from "@rc/protocol";
-import { createLocalWebAdapter } from "@rc/adapter-local-web";
+import { buildAdapter } from "../runner.js";
 import {
   flagString,
   loadConfig,
@@ -88,7 +88,9 @@ async function checkCommandImpl(args: string[]): Promise<CommandResult> {
 
   // NO spawn: manifest() is static metadata, callable before setupEnv — the
   // app entry path may even be a placeholder here.
-  const adapter = createLocalWebAdapter({ appPath: config.app.entry });
+  const adapterOpts: { appPath: string; observersFile?: string } = { appPath: config.app.entry };
+  if (config.adapter.observers !== undefined) adapterOpts.observersFile = config.adapter.observers;
+  const adapter = buildAdapter(adapterOpts);
   const manifest = adapter.manifest();
   checkCapabilities(scenario, manifest);
 

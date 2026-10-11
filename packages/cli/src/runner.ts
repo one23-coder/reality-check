@@ -18,6 +18,16 @@ import { executeScenario, isRunError } from "@rc/core";
 import { createLocalWebAdapter, type LocalWebAdapterOptions } from "@rc/adapter-local-web";
 import { CliError, configError, internalError, loadScenarioFile, type RcConfig } from "./config.js";
 
+/** Adapter construction is a CONFIG concern: a missing/malformed observers file
+ * must surface as a configuration error (exit 64), not an opaque tool failure. */
+export function buildAdapter(opts: LocalWebAdapterOptions): ReturnType<typeof createLocalWebAdapter> {
+  try {
+    return createLocalWebAdapter(opts);
+  } catch (e) {
+    throw configError(e instanceof Error ? e.message : String(e));
+  }
+}
+
 /** Sidecar the CLI writes for `rerun` — core's run.json intentionally does
  * NOT carry the scenario path, so the CLI records it here. */
 export interface CliRunMeta {
@@ -102,7 +112,10 @@ export async function runOnce(opts: RunOnceOptions): Promise<RunOutcome> {
   const adapterOpts: LocalWebAdapterOptions = { appPath: config.app.entry };
   const faultEnv = opts.fault ?? config.app.faultEnv;
   if (faultEnv !== undefined && faultEnv !== "") adapterOpts.faultEnv = faultEnv;
-  const adapter = createLocalWebAdapter(adapterOpts);
+  // 观察器属于**应用**（规则 2「单一口径」的提供者是适配器/应用配置）。路径来自
+  // 配置即配置错误（exit 64），而不是当作工具异常。
+  if (config.adapter.observers !== undefined) adapterOpts.observersFile = config.adapter.observers;
+  const adapter = buildAdapter(adapterOpts);
 
   const execOpts: {
     runsRoot: string;

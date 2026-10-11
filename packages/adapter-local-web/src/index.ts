@@ -1,7 +1,12 @@
 export {
   LocalWebAdapter,
   createLocalWebAdapter,
+  BOOKING_OBSERVERS,
+  EXAM_OBSERVERS,
+  BUNDLED_OBSERVERS,
+  OBSERVERS_FILENAME,
   type LocalWebAdapterOptions,
+  type ObserverSpec,
   type SetupEnvOptions,
 } from "./adapter.js";
 export type {

@@ -104,6 +104,10 @@
 21. **可观测性靠事件流，不靠猜**（2026-10-10 四轮）：内核把每个 Attempt 的耗时写进 `durationMs`（含 barrier 组），并支持 `onEvent` 实时回调；CLI `--verbose` 因此能边跑边打印步骤/观察/重试，结束后给出最慢三步。时间线仍是唯一真相来源（`seq` 排序），实时流只是它的镜像。
 22. **条件步骤：跳过是记录，不是结论**（2026-10-10 五轮，场景/结果升版 1.0 → 1.1）：`steps[].when` 只能引用**已声明观察器**，用与断言同一套词汇判定；条件不成立 ⇒ 该步 `skipped`（不执行、不进 blocked、也不当成功，必须留在时间线与报告里）；条件**无法判定**（观察器 0 行/列缺失/证据核对失败）⇒ 整轮 blocked——在证据不足时替用户选分支等于伪造结论。`when` + `barrier` 同步骤拒绝；`when` 出现在 1.0 文档被校验器与内核**两道**拒绝。升版按 `docs/protocol-reference.md` §6 的模板执行，并重跑全部证据链。
 23. **脱敏导出宁可拒产，不可漏检**（2026-10-10 六轮）：`export --run-id <id> --pack <dir>` 产出可分享的证据包。三层防线：①已知敏感值（场景角色账号/密码、db 绝对路径、运行目录）**逐字**替换，长值优先；②显式模式规则兜底（`_rc` 账号、Windows/POSIX 绝对路径、回环端口、邮箱、API key、Bearer、PEM 私钥）；③写完后**独立反扫**——包内任一文本文件再出现任何原始敏感值即删除整包、exit 70。二进制截图**默认排除**（像素无法用文本规则擦除，不假装脱敏），`--include-images` 显式包含时在 pack.json 标记 `sanitized: false`。规则表与反扫实现在 `packages/reporter/src/sanitize.ts` 单一来源，CLI/MCP/工作台可复用。
+24. **已证实的违规不被不相干的证据缺口压低**（2026-10-11 七轮）：结果聚合是「任意一条 violated ⇒ failed（exit 1）」；只有当**没有**规则被证伪、却有判定不了的断言时才是 inconclusive（exit 2）。旧规则「有 inconclusive 一律 inconclusive」会把一次真实超订（该规则证据完整）因为另一个观察器恰好读空而报成 exit 2——把真失败降了一档。缺口仍在其自身规则上具名（`missingEvidenceTypes`）并留在报告里，只是不再覆盖别人的结论。受此影响，`cancel-keeps-slot/-seat` 两个冻结标签由 2 重冻结为 1（理由写入 `fixtures/diagnostic-cases.json` 的 `revisions`）。
+25. **观察器属于应用，不属于适配器源码**（2026-10-11 七轮）：适配器里不再硬编码任何业务主键/账号（曾经的 `course-1`/`exam-1`/`holder_rc` 现在只是**两个自带参考应用的预设**）。接入新应用只写配置：应用目录旁的 `reality-check.observers.json`、配置里的 `adapter.observers`，或直接传 `observers`。`observedTables` 随之声明；声明的表不在白名单内、缺少 sql/columns、JSON 坏掉都按**配置错误**具名拒绝（exit 64），绝不静默回退到预设（回退会让同名表查出别的意思）。「单一口径」不变：场景 observer 的 SQL 仍必须与适配器清单一致，只是清单现在来自应用配置。
+26. **报告里的 `expected` 必须按 op 的词汇渲染**（2026-10-11 七轮）：`eqStr` 带 `expected`、数值 op 带 `value`，曾共用 `${op} ${value}` 模板，导致 eqStr 一旦 inconclusive 就渲染成 `eqStr undefined`——最关键的一句恰好在最需要它时消失。现在 held/violated/inconclusive/not-evaluated 四种判定共用同一个 `expectedText()`。顺带放开断言与条件的**负值**（`value` 不再 `min: 0`）：余额透支、库存缺口、超订后 `capacity-left = -1` 正是断言存在的理由。
+27. **基础设施失败必须落到数据里，不能抛出调用栈**（2026-10-11 七轮）：fixture 子进程的 `spawn` 失败曾写成 `child.on("error", () => { throw err })`——该回调不在任何调用栈内，throw 会变成未捕获异常：进程直接死，没有 `blocked` 事件、没有 `result.json`，与「可归因的基础设施失败」的承诺正好相反（浏览器断开这条处理得很好，唯独子进程漏了）。现在错误被记录，健康检查循环把它转成 `setupEnv` 的正常拒绝（内核 ⇒ blocked / exit 3），运行期再出现则写进 `attempt.detail.error`。
 
 ## 4. 阶段 0：工程基线 —— ✅ 已完成并验收
 
@@ -369,7 +373,7 @@ CLI（已有）／工作台／MCP／CI
 ### A.5 已知限制（如实记录，非完成暗示）
 
 1. ~~内核未向 setupEnv 传递 seedRole 种子；角色"占用初始名额"只能由场景**显式报名步骤**代替（规则 7 的完整内核实现列为改进项）。~~ **已于 2026-10-10 二轮修复**：内核把场景角色传给 `setupEnv`，6 个场景改为声明式（见 A.7）。
-2. cancel-keeps-slot(-seat) 故障在本 fixture 中为"取消完全无操作"，取消前后的可观察状态差仅剩候补队列不变，故含一个 inconclusive 断言，整体降级为退出码 2（方案 §10 允许的降级语义，违规均已归因）。
+2. cancel-keeps-slot(-seat) 故障在本 fixture 中为"取消完全无操作"，其中一条断言（递补者的账号名）因观察器读空而判不了（inconclusive，`missingEvidenceTypes:["rows"]`，具名留在报告里）；但同轮另有两条**证据完整**的 violated 规则，按规则 24 整轮为 exit 1（2026-10-11 之前是 exit 2）。
 3. macOS 支持未验证（方案 §2 表格约定：经实际验证后列入矩阵）。
 4. ~~步骤证据未登记、不参与核对（适配器把每步截图与 DOM 快照写进 `evidence/`，但 `Attempt` 没有证据字段……§10「内核登记时核对文件存在」只覆盖观察器证据）。~~ **已于 2026-10-10 二轮修复**：`Attempt.evidence` 走同一道核对闸门（见 A.7）。边界仍在：步骤证据不是断言主体，其缺失不改变判定。
 5. ~~`claimDataRoot` 未接入产品路径（§10「已有内容但无所有权标记的数据根目录拒绝运行」只被 core 单测调用）。~~ **已于 2026-10-10 二轮修复**：内核启动前认领数据根、登记应用库、`teardown` 台账兜底（见 A.7）。
@@ -544,3 +548,20 @@ CLI（已有）／工作台／MCP／CI
 `packages/adapter-local-web/src/types.ts` 原先手工镜像 protocol 的 `Attempt` / `AttemptOutcome` / `EvidenceRef` / `AdapterManifest` 等 10 个类型——漂移时不会编译报错，只会在运行时变成「被校验器拒收的 result.json」或「被内核静默丢弃的证据」。现改为 `export type { ... } from "@rc/protocol"`（该包本就依赖 protocol）。仅 `ObserverReading` 与 `StepContext` 保留本地定义：它们是内核侧形状，而**适配器不得依赖内核**（这个依赖方向是适配器可替换的前提），其 `evidence` 字段用 protocol 的 `EvidenceRef`，规则不变。改动后 `npm run verify` 仍 162/162。
 
 **诚实边界**：其余「外部验证」项（CI 托管 Runner 运行号、≥3 个外部项目、macOS）仍未取到——它们在 §12 保持 ⬜，不以本机通过代替。
+
+### A.13 2026-10-11 七轮：外部审查发现的六个缺陷（含 1 条结构性）
+
+来源：一次逐文件通读 + 两个复现脚本的外部审查（不是自评）。六条**全部核实为真**，其中两条给出了实际输出。按影响排序修复，每条都有回归测试。
+
+| # | 缺陷 | 严重度 | 修复 |
+| --- | --- | --- | --- |
+| 1 | 适配器 8 个观察器的 SQL **写死** fixture 主键与账号（`course-1`/`exam-1`/`holder_rc`）；叠加「单一口径」（场景 SQL 必须与清单一致）后，场景作者也改不了 ⇒ 接入新应用必须改适配器源码 | 高（唯一影响"能不能被别人用"） | 观察器外置为**应用配置**：`<应用目录>/reality-check.observers.json`、配置 `adapter.observers`、或直接传 `observers`；`observedTables` 随之声明。内置项降级为「两个参考应用的预设」。坏 JSON/缺字段/表不在白名单 ⇒ exit 64 具名拒绝，**不静默回退**（规则 25 + 教程 §8.1） |
+| 2 | `rollUpVerdict`：有 inconclusive 就一律 inconclusive ⇒ 一次真实超订（该规则证据完整）被另一条读空的断言压成 exit 2 | 高（把真失败降一档） | 改为「任意 violated ⇒ failed（exit 1）」；只有**没有**规则被证伪时才 inconclusive。缺口仍具名留在自身规则上（规则 24）。实测：`booking-cancel-waitlist + cancel-keeps-slot` 由 exit 2 → exit 1（该轮确有两条带完整证据的 violated：`slot-refilled-by-promotion` observed 1≠2、`queue-drains-in-declared-order` bob_rc≠carol_rc） |
+| 3 | `expected` 在 eqStr 降级时渲染成 `eqStr undefined`（共用 `${op} ${value}`，而 eqStr 无 `value`） | 中 | 四种判定共用 `expectedText()`：eqStr 用 `expected`，数值 op 用 `value`。实测修复后报告为 `expected: "eqStr bob_rc"` |
+| 4 | `vInt({min:0})` 禁止负的断言值与条件值 ⇒ 余额透支/库存缺口表达不出来 | 中 | 改为 `vInt()`（负值合法）；`retry.attempts`、`seed` 的下界保持不变 |
+| 5 | `child.on("error", () => { throw err })` 不在调用栈内 ⇒ 未捕获异常、进程直接死、无 blocked 事件、无 result.json（与「可归因的基础设施失败」承诺相反） | 中（结构性，未能实测触发） | 错误经 `noteChildError()` 落状态：健康检查循环转成 `setupEnv` 正常拒绝（内核 ⇒ blocked/exit 3）；运行期出现则写进 `attempt.detail.error`。**诚实**：真实 spawn 失败未能复现（走到的都是 `/healthz` 超时），测试直接驱动同一段监听代码 |
+| 6 | 脱敏路径规则只认少数 POSIX 根（`/workspace`、GitLab `/builds`、Git Bash `/d/x`、堆栈源码路径都不命中）；`findLeaks` 只反扫已知敏感值 | 低（泄漏面） | 路径规则扩展到 CI/容器根 + 带扩展名的绝对路径兜底 + Git Bash 盘符，并把 `=` 加入边界（`key=/abs/path` 是最常见形态，测试先抓到这个缺口）；新增 `findRuleResidues()`——脱敏后**规则自身不得再命中**，与已知值反扫并列进 pack 的两道防线 |
+
+**协议兼容性**：场景协议未升版（负值是对合法文档空间的放宽）；结果协议未升版（`expected` 是渲染文本）。冻结标签因规则 24 **重冻结**（`frozenAt: 2026-10-11`，`revisions` 写明 2→1 与理由）——不是为了让测试变绿，而是语义确实变了。
+
+**实测**：`npm run verify` **174/174**（新增 12 项）；`npm run accept` **7/7**（verify 46.4s / matrix 144.5s 21 用例 0 偏差 / benchmark 131.2s / tri-entry 16.5s / agent-loop 16.6s / blocked 19.2s / serial 65.7s 10/10）。

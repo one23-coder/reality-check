@@ -59,7 +59,7 @@ export function evaluateAssertion(
       assertionId: assertion.id,
       verdict: heldStr ? "held" : "violated",
       observed: observedStr,
-      expected: `eqStr ${assertion.expected}`,
+      expected: expectedText(assertion),
       evidenceRefs: reading.evidence,
     };
   }
@@ -76,9 +76,22 @@ export function evaluateAssertion(
     assertionId: assertion.id,
     verdict: held ? "held" : "violated",
     observed,
-    expected: `${assertion.op} ${assertion.value}`,
+    expected: expectedText(assertion),
     evidenceRefs: reading.evidence,
   };
+}
+
+/** Human-readable expectation, rendered the SAME way for every verdict.
+ *
+ * `eqStr` carries `expected`; every numeric op carries `value` (the scenario
+ * validator forbids mixing them). Rendering must follow that split — a shared
+ * `${op} ${value}` template turns an inconclusive eqStr into
+ * "eqStr undefined", i.e. the single most useful fact in the report is lost
+ * exactly when someone needs it. */
+export function expectedText(assertion: Assertion): string {
+  return assertion.op === "eqStr"
+    ? `eqStr ${assertion.expected ?? "(missing)"}`
+    : `${assertion.op} ${String(assertion.value ?? "(missing)")}`;
 }
 
 function inconclusive(
@@ -91,22 +104,25 @@ function inconclusive(
     assertionId: assertion.id,
     verdict: "inconclusive",
     observed: null,
-    expected: `${assertion.op} ${assertion.value}`,
+    expected: expectedText(assertion),
     evidenceRefs: evidence,
     missingEvidenceTypes: missing,
   };
 }
 
 /** Roll rule evaluations up to a verdict (方案 §10 结果语义).
- * - any violated rule with zero inconclusive evaluations -> failed (exit 1);
- * - any inconclusive evaluation -> inconclusive (exit 2), naming gaps;
+ *
+ * - **any violated rule -> failed (exit 1)。** A proven business violation is
+ *   NOT downgraded by an unrelated observation gap: the gap stays named on its
+ *   own rule (`missingEvidenceTypes`), but it cannot turn a proven failure into
+ *   an "inconclusive". (The old rule — "any inconclusive wins" — reported a real
+ *   overbooking as exit 2 whenever some other observer happened to read empty.)
+ * - otherwise any inconclusive -> inconclusive (exit 2), naming gaps;
  * - otherwise passed (exit 0). blocked never comes from here. */
 export function rollUpVerdict(evaluations: RuleEvaluation[]): Verdict {
   if (evaluations.length === 0)
     throw internalError("no rule evaluations; scenario must declare at least one assertion");
-  const violated = evaluations.filter((e) => e.verdict === "violated");
-  const inconclusiveCount = evaluations.filter((e) => e.verdict === "inconclusive").length;
-  if (violated.length > 0 && inconclusiveCount === 0) return "failed";
-  if (inconclusiveCount > 0) return "inconclusive";
+  if (evaluations.some((e) => e.verdict === "violated")) return "failed";
+  if (evaluations.some((e) => e.verdict === "inconclusive")) return "inconclusive";
   return "passed";
 }

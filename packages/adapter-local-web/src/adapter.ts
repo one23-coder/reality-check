@@ -26,11 +26,32 @@ import type {
   StepContext,
 } from "./types.js";
 
+/** One observer: the SQL that defines a business fact, plus what it touches.
+ * 断言主体必须复用这些口径（规则 2「单一口径」），所以它们由**适配器/应用配置**
+ * 声明，而不是由场景随手写。 */
+export interface ObserverSpec {
+  sql: string;
+  tables: string[];
+  columns: string[];
+}
+
+/** Per-app observer config, looked up next to the app entry (dirname(appPath)).
+ * Shape: `{ "observedTables": [...], "observers": { <id>: {sql, tables, columns} } }`
+ * (a bare `{ <id>: {...} }` record is also accepted). */
+export const OBSERVERS_FILENAME = "reality-check.observers.json";
+
 export interface LocalWebAdapterOptions {
   /** Absolute or cwd-relative path to the fixture app entry (node script). */
   appPath: string;
   /** Value for the app's RC_FAULT env; omit/empty to run a correct app. */
   faultEnv?: string;
+  /** Observers for THIS app. Required to adopt a new app — see `observersFile`
+   * and `${OBSERVERS_FILENAME}` for the no-source-change route. */
+  observers?: Record<string, ObserverSpec>;
+  /** Read the observers from this file instead of the app directory. */
+  observersFile?: string;
+  /** SQL 层只读白名单 (规则 1). Defaults to the union of declared tables. */
+  observedTables?: string[];
 }
 
 export interface SetupEnvOptions {
@@ -56,8 +77,12 @@ const ADAPTER_VERSION = "0.1.0";
 const REJECT_RE = /rejected|denied|full|已满|拒绝/i;
 const TABLE_RE = /\b(?:from|join|into|update)\s+([A-Za-z_][A-Za-z0-9_]*)/gi;
 
-/** Adapter-provided observers — literal SQL, named exactly (断言主体复用这些口径). */
-const OBSERVERS: Record<string, { sql: string; tables: string[]; columns: string[] }> = {
+/** 自带参考应用 booking-app 的观察器预设（**不是**通用能力）。
+ *
+ * 这里的 SQL 绑在该应用的 schema 上（course-1 主键、holder 种子账号）。它们能被
+ * 复用是因为它们被声明成了预设，而不是因为适配器认识这张表 —— 接入新应用请提供
+ * 自己的 observers（options / `reality-check.observers.json`），不要改适配器源码。 */
+export const BOOKING_OBSERVERS: Record<string, ObserverSpec> = {
   "booking-count": {
     sql: "SELECT COUNT(*) AS n FROM bookings",
     tables: ["bookings"],
@@ -81,6 +106,10 @@ const OBSERVERS: Record<string, { sql: string; tables: string[]; columns: string
     tables: ["waitlist"],
     columns: ["account"],
   },
+};
+
+/** 自带参考应用 exam-seat-app 的观察器预设（同上：绑在该应用 schema 上）。 */
+export const EXAM_OBSERVERS: Record<string, ObserverSpec> = {
   "seat-count": {
     sql: "SELECT COUNT(*) AS n FROM reservations",
     tables: ["reservations"],
@@ -105,6 +134,114 @@ const OBSERVERS: Record<string, { sql: string; tables: string[]; columns: string
   },
 };
 
+/** 缺省预设 = 两个自带参考应用的并集。仅为向后兼容保留：一个**新应用**若不提供
+ * observers 会静默拿到这组 SQL，第一次观察就会因为表/列不存在而报错（或更糟：
+ * 同名表含义不同却查出了数据）。接入新应用必须显式声明。 */
+export const BUNDLED_OBSERVERS: Record<string, ObserverSpec> = {
+  ...BOOKING_OBSERVERS,
+  ...EXAM_OBSERVERS,
+};
+
+const BUNDLED_OBSERVED_TABLES = [
+  "courses",
+  "bookings",
+  "waitlist",
+  "accounts",
+  "exams",
+  "reservations",
+];
+
+// --------------------------------------------------------- observer resolution
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string");
+}
+
+/** Validate + copy an observers record; every failure names the offending id. */
+function normalizeObservers(input: unknown, source: string): Record<string, ObserverSpec> {
+  if (typeof input !== "object" || input === null || Array.isArray(input))
+    throw new Error(`${source}: observers must be an object keyed by observer id`);
+  const out: Record<string, ObserverSpec> = {};
+  for (const [id, raw] of Object.entries(input as Record<string, unknown>)) {
+    const o = raw as Partial<ObserverSpec> | null;
+    if (typeof id !== "string" || id === "")
+      throw new Error(`${source}: observer ids must be non-empty strings`);
+    if (typeof o?.sql !== "string" || o.sql.trim() === "")
+      throw new Error(`${source}: observer "${id}" needs a non-empty "sql"`);
+    if (!isStringArray(o?.tables))
+      throw new Error(`${source}: observer "${id}" needs "tables": non-empty string[]`);
+    if (!isStringArray(o?.columns))
+      throw new Error(`${source}: observer "${id}" needs "columns": non-empty string[]`);
+    out[id] = { sql: o.sql, tables: [...o.tables], columns: [...o.columns] };
+  }
+  if (Object.keys(out).length === 0)
+    throw new Error(`${source}: observers must declare at least one observer`);
+  return out;
+}
+
+function assertTablesDeclared(
+  observers: Record<string, ObserverSpec>,
+  observedTables: string[],
+  source: string,
+): void {
+  for (const [id, o] of Object.entries(observers)) {
+    for (const table of o.tables) {
+      if (!observedTables.includes(table))
+        throw new Error(
+          `${source}: observer "${id}" declares table "${table}" which is not in observedTables [${observedTables.join(", ")}]`,
+        );
+    }
+  }
+}
+
+/** Parse `{ observers, observedTables? }` (a bare record is accepted too). */
+function parseObserversFile(raw: string, file: string): {
+  observers: Record<string, ObserverSpec>;
+  observedTables: string[];
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (e) {
+    throw new Error(`${file}: invalid JSON (${e instanceof Error ? e.message : String(e)})`);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+    throw new Error(`${file}: expected a JSON object`);
+  const obj = parsed as Record<string, unknown>;
+  const hasWrapper = Object.prototype.hasOwnProperty.call(obj, "observers");
+  const observers = normalizeObservers(hasWrapper ? obj["observers"] : obj, file);
+  const declared = obj["observedTables"];
+  if (declared !== undefined && !isStringArray(declared))
+    throw new Error(`${file}: "observedTables" must be a non-empty string[]`);
+  const observedTables =
+    declared !== undefined ? [...declared] : [...new Set(Object.values(observers).flatMap((o) => o.tables))];
+  assertTablesDeclared(observers, observedTables, file);
+  return { observers, observedTables };
+}
+
+/** Options → app-dir config file → bundled presets (in that order). */
+function resolveObserverConfig(opts: LocalWebAdapterOptions): {
+  observers: Record<string, ObserverSpec>;
+  observedTables: string[];
+} {
+  if (opts.observers !== undefined) {
+    const observers = normalizeObservers(opts.observers, "adapter options");
+    const observedTables =
+      opts.observedTables ?? [...new Set(Object.values(observers).flatMap((o) => o.tables))];
+    assertTablesDeclared(observers, observedTables, "adapter options");
+    return { observers, observedTables };
+  }
+  if (opts.observersFile !== undefined) {
+    if (!fs.existsSync(opts.observersFile))
+      throw new Error(`observers file not found: ${opts.observersFile}`);
+    return parseObserversFile(fs.readFileSync(opts.observersFile, "utf8"), opts.observersFile);
+  }
+  const alongside = path.join(path.dirname(path.resolve(opts.appPath)), OBSERVERS_FILENAME);
+  if (fs.existsSync(alongside))
+    return parseObserversFile(fs.readFileSync(alongside, "utf8"), alongside);
+  return { observers: { ...BUNDLED_OBSERVERS }, observedTables: [...BUNDLED_OBSERVED_TABLES] };
+}
+
 const SUPPORTED_OPS = [
   "navigate",
   "register",
@@ -118,25 +255,22 @@ const SUPPORTED_OPS = [
 
 const SUPPORTED_ASSERTIONS = ["eq", "ne", "gt", "gte", "lt", "lte", "countEq", "eqStr"] as const;
 
-const OBSERVED_TABLES = [
-  "courses",
-  "bookings",
-  "waitlist",
-  "accounts",
-  "exams",
-  "reservations",
-] as const;
-
 const EVIDENCE_KINDS: EvidenceKind[] = ["screenshot", "dom-snapshot", "page-text", "sql-dump"];
 
 export class LocalWebAdapter {
   private readonly opts: LocalWebAdapterOptions;
+  /** Resolved observers for THIS app (options > app-dir config > bundled). */
+  private readonly observers: Record<string, ObserverSpec>;
+  private readonly observedTables: string[];
   private browser: Browser | null = null;
   private child: ChildProcess | null = null;
   private readonly pages = new Map<string, PageEntry>();
   /** Set when Chromium disconnects mid-run — every later step must fail with
    * THIS reason instead of an anonymous "page has been closed" (归因要求). */
   private browserCrashReason: string | null = null;
+  /** Set when the fixture app's PROCESS fails to start (spawn "error" event).
+   * Never thrown from the listener — see `noteChildError`. */
+  private childSpawnError: Error | null = null;
   private baseUrl = "";
   private dbPath: string | null = null;
   private dataRoot: string | null = null;
@@ -152,6 +286,9 @@ export class LocalWebAdapter {
 
   constructor(opts: LocalWebAdapterOptions) {
     this.opts = opts;
+    const cfg = resolveObserverConfig(opts);
+    this.observers = cfg.observers;
+    this.observedTables = cfg.observedTables;
   }
 
   manifest(): AdapterManifest {
@@ -164,10 +301,10 @@ export class LocalWebAdapter {
       scenarioVersion: "1.1",
       supportedOps: [...SUPPORTED_OPS],
       supportedAssertions: [...SUPPORTED_ASSERTIONS],
-      observedTables: [...OBSERVED_TABLES],
+      observedTables: [...this.observedTables],
       evidenceKinds: [...EVIDENCE_KINDS],
       barriers: true,
-      observers: OBSERVERS,
+      observers: { ...this.observers },
     };
   }
 
@@ -213,18 +350,30 @@ export class LocalWebAdapter {
         delete env.RC_FAULT;
       }
 
+      this.childSpawnError = null;
       this.child = spawn(process.execPath, [this.opts.appPath], {
         env,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      this.child.on("error", (err) => {
-        throw err;
-      });
+      // 归因要求 (README「可归因的基础设施失败」): the spawn failure must not be
+      // thrown here. This callback runs outside any call stack, so `throw` would
+      // become an uncaught exception — the process dies without a `blocked`
+      // event and without writing result.json, exactly the opposite of what the
+      // contract promises. Record it; the health loop below converts it into a
+      // normal setupEnv rejection (kernel -> blocked / exit 3).
+      this.child.on("error", (err: unknown) => this.noteChildError(err));
 
       // Poll /healthz until 200 (15s timeout), parse {ok, app, version}.
       const deadline = Date.now() + 15_000;
       let healthy = false;
       while (Date.now() < deadline) {
+        // Read through a method: a direct field read here would be narrowed to
+        // `null` by the compiler (the listener's write is invisible to it).
+        const spawnError = this.takeSpawnError();
+        if (spawnError !== null) {
+          await this.teardown();
+          throw new Error(`fixture app process failed to start: ${spawnError.message}`);
+        }
         try {
           const res = await fetch(`${this.baseUrl}/healthz`);
           if (res.ok) {
@@ -375,12 +524,14 @@ export class LocalWebAdapter {
     this.assertUp();
     const def = this.manifest().observers[observerId];
     if (!def) {
-      throw new Error(`unknown observer "${observerId}"; known: ${Object.keys(OBSERVERS).join(", ")}`);
+      throw new Error(
+        `unknown observer "${observerId}"; known: ${Object.keys(this.observers).join(", ")}`,
+      );
     }
     // SQL 层只读白名单 (规则 1): every table named in the SQL must be declared.
     for (const match of def.sql.matchAll(TABLE_RE)) {
       const table = match[1];
-      if (!table || !OBSERVED_TABLES.includes(table as (typeof OBSERVED_TABLES)[number])) {
+      if (!table || !this.observedTables.includes(table)) {
         throw new Error(
           `observer "${observerId}" touches table "${String(table)}" outside observedTables whitelist`,
         );
@@ -427,7 +578,7 @@ export class LocalWebAdapter {
       const dump: Record<string, unknown[]> = {};
       const db = new DatabaseSync(this.dbPath);
       try {
-        for (const table of OBSERVED_TABLES) {
+        for (const table of this.observedTables) {
           dump[table] = db.prepare(`SELECT * FROM ${table}`).all();
         }
       } finally {
@@ -509,7 +660,23 @@ export class LocalWebAdapter {
 
   // ------------------------------------------------------------------ internals
 
+  /** Single place where a fixture-process spawn failure becomes attributable
+   * state (called by the child's "error" listener).
+   *
+   * Public by design: a real spawn failure cannot be reproduced on demand, so
+   * tests drive this method directly and assert the surfacing contract
+   * (no throw out of the listener, an attributable message in `detail.error`). */
+  noteChildError(err: unknown): void {
+    this.childSpawnError = err instanceof Error ? err : new Error(String(err));
+  }
+
+  private takeSpawnError(): Error | null {
+    return this.childSpawnError;
+  }
+
   private assertUp(): void {
+    if (this.childSpawnError !== null)
+      throw new Error(`fixture app process failed: ${this.childSpawnError.message}`);
     if (this.browserCrashReason !== null) throw new Error(this.browserCrashReason);
     if (!this.baseUrl || !this.browser) {
       throw new Error("adapter environment is not up; call setupEnv first");

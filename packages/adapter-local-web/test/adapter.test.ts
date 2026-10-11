@@ -76,6 +76,115 @@ test("manifest declares the adapter contract", () => {
   }
 });
 
+/** 观察器属于**应用**，不属于适配器：接入新应用不能要求改适配器源码。 */
+const CUSTOM_OBSERVERS = {
+  observedTables: ["courses", "bookings"],
+  observers: {
+    "my-left": {
+      sql: "SELECT capacity - (SELECT COUNT(*) FROM bookings WHERE bookings.course_id = courses.id) AS left FROM courses WHERE id = 'course-1'",
+      tables: ["courses", "bookings"],
+      columns: ["left"],
+    },
+  },
+};
+
+test("observers are discovered next to the app entry — no adapter source change", async () => {
+  const tmp = await makeTmp();
+  const appDir = path.join(tmp, "app");
+  mkdirSync(appDir, { recursive: true });
+  await writeFile(
+    path.join(appDir, "reality-check.observers.json"),
+    JSON.stringify(CUSTOM_OBSERVERS),
+    "utf8",
+  );
+  // manifest() is static metadata: the app file itself need not exist here.
+  const adapter = createLocalWebAdapter({ appPath: path.join(appDir, "server.js") });
+  const m = adapter.manifest();
+  // 内置预设（booking/exam）不再出现 —— 观察器口径来自这个应用自己的声明。
+  assert.deepEqual(Object.keys(m.observers), ["my-left"]);
+  assert.deepEqual([...m.observedTables].sort(), ["bookings", "courses"]);
+  assert.equal(m.observers["my-left"]?.columns[0], "left");
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("an app-owned observer works end to end (real app, custom SQL)", async () => {
+  const tmp = await makeTmp();
+  const runDir = path.join(tmp, "run");
+  const observersFile = path.join(tmp, "observers.json");
+  await writeFile(observersFile, JSON.stringify(CUSTOM_OBSERVERS), "utf8");
+  const roles = [role("h1", "h1_rc", "pw-h1", "holder")];
+  const adapter = createLocalWebAdapter({ appPath: BOOKING_APP, observersFile });
+  try {
+    await adapter.setupEnv({ runDir, seed: 7, dataRoot: path.join(tmp, "data"), roles });
+    await adapter.registerAccounts(roles);
+    // capacity 2，种子 holder 占 1 → 自定义口径读到 1
+    assert.equal(Number(firstCell(await adapter.observe("my-left"))), 1);
+    // 内置观察器已不在清单里：不会悄悄回退到 preset
+    await assert.rejects(() => adapter.observe("capacity-left"), /unknown observer "capacity-left"/);
+  } finally {
+    await adapter.teardown();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("rejects malformed observer configs with a named reason (config error, not silent fallback)", async () => {
+  const tmp = await makeTmp();
+  const write = async (name: string, body: string): Promise<string> => {
+    const file = path.join(tmp, name);
+    await writeFile(file, body, "utf8");
+    return file;
+  };
+  assert.throws(
+    () => createLocalWebAdapter({ appPath: BOOKING_APP, observersFile: path.join(tmp, "nope.json") }),
+    /observers file not found/,
+  );
+  const badJson = await write("bad.json", "{oops");
+  assert.throws(
+    () => createLocalWebAdapter({ appPath: BOOKING_APP, observersFile: badJson }),
+    /invalid JSON/,
+  );
+  assert.throws(
+    () =>
+      createLocalWebAdapter({
+        appPath: BOOKING_APP,
+        observers: {
+          ghost: { sql: "SELECT 1", tables: ["not_declared"], columns: ["x"] },
+        },
+        observedTables: ["bookings"],
+      }),
+    /declares table "not_declared" which is not in observedTables/,
+  );
+  assert.throws(
+    () =>
+      createLocalWebAdapter({
+        appPath: BOOKING_APP,
+        observers: { half: { sql: "SELECT 1", tables: ["bookings"] } as never },
+      }),
+    /needs "columns"/,
+  );
+  await rm(tmp, { recursive: true, force: true });
+});
+
+test("a fixture-process spawn failure is attributable instead of an uncaught throw", async () => {
+  const tmp = await makeTmp();
+  const adapter = createLocalWebAdapter({ appPath: BOOKING_APP });
+  try {
+    // 同一段代码路径就是 `child.on("error")` 的监听器：以前这里 throw，会变成
+    // 未捕获异常 —— 进程直接死，没有 blocked 事件，也没有 result.json。
+    adapter.noteChildError(new Error("spawn ENOENT"));
+    await assert.rejects(() => adapter.observe("booking-count"), /fixture app process failed: spawn ENOENT/);
+    const attempt = await adapter.runStep(
+      { id: "x", actor: "bob", op: "navigate", params: { path: "/" } },
+      { runDir: path.join(tmp, "run"), seed: 1, event: async () => 0 },
+    );
+    assert.equal(attempt.outcome, "error");
+    assert.match(String((attempt.detail as Record<string, unknown>)["error"]), /fixture app process failed/);
+  } finally {
+    await adapter.teardown();
+    await rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("happy path: register/login/book through real pages, observers read committed state", async () => {
   const tmp = await makeTmp();
   const runDir = path.join(tmp, "run");

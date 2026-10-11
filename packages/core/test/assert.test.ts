@@ -109,8 +109,38 @@ describe("rollUpVerdict", () => {
     assert.equal(rollUpVerdict([violated, violated]), "failed");
   });
 
-  it("any inconclusive downgrades to inconclusive, even with violations", () => {
-    assert.equal(rollUpVerdict([violated, inconclusive]), "inconclusive");
+  it("a proven violation is NOT downgraded by an unrelated observation gap", () => {
+    // 旧行为「有 inconclusive 一律 inconclusive」会把一次真实超订（violated）因
+    // 另一个观察器读空而报成 exit 2 —— 缺口仍在该条规则上具名，但不改结论。
+    assert.equal(rollUpVerdict([violated, inconclusive]), "failed");
+    assert.equal(rollUpVerdict([inconclusive, violated, held]), "failed");
+  });
+
+  it("inconclusive alone still downgrades (nothing was proven)", () => {
     assert.equal(rollUpVerdict([inconclusive]), "inconclusive");
+    assert.equal(rollUpVerdict([held, inconclusive]), "inconclusive");
+  });
+});
+
+/** eqStr carries `expected` and NO `value` (the validator forbids both). */
+function eqStrAssertion(expected: string): Assertion {
+  return { id: "a1", rule: "r1", observer: "o1", op: "eqStr", expected };
+}
+
+describe("expected rendering", () => {
+  it("eqStr keeps its expected string when the rule is inconclusive", () => {
+    // 旧实现共用 `${op} ${value}`，而 eqStr 没有 value → "eqStr undefined"，
+    // 报告里最关键的一句恰好在最需要它时丢失。
+    const e = single(eqStrAssertion("alice"), reading({ rows: [] }));
+    assert.equal(e.verdict, "inconclusive");
+    assert.equal(e.expected, "eqStr alice");
+    assert.doesNotMatch(e.expected, /undefined/);
+  });
+
+  it("renders the same shape for held/violated and numeric ops", () => {
+    assert.equal(single(eqStrAssertion("alice"), reading({ rows: [{ count: "alice" }] })).expected, "eqStr alice");
+    assert.equal(single(assertion({ op: "eq", value: 5 }), reading()).expected, "eq 5");
+    // 负值可表达（余额透支/库存缺口）后，渲染也必须正确
+    assert.equal(single(assertion({ op: "eq", value: -1 }), reading({ rows: [{ count: -1 }] })).expected, "eq -1");
   });
 });
